@@ -45,18 +45,22 @@ The saved comparison table reports `SolveSeconds` for each method and `TotalSeco
 
 ## Mathematical description
 
-For context, the underlying approach is summarized by the paper's discrete problem **$(P_2)$**. Written with consistent component indices and the admissibility condition as an explicit constraint, it is
+For context, the underlying approach is summarized by the paper's discrete problem $(P_2)$. Written with consistent component indices and explicit constraints, it is
 
-$$
+```math
 \begin{aligned}
-\min_{\substack{u\in U_{\mathrm{ad}},\;D_j^{\mathsf T}D_j=I,\;C_j\\j=1,2,3}}
-&\frac{h^2}{2}\left\|F_d(u)-f^\delta\right\|_2^2
-+\frac{\alpha}{2}\left\|\nabla u\right\|_{U_1}^2\\
-&+\sum_{j=1}^{3}\lambda_j\left(
-\frac{1}{2}\left\|P\!\left[\frac{u_j}{M_j}\right]-D_jC_j\right\|_F^2
-+\beta_j\left\|C_j\right\|_1\right).
+\min_{u,D,C}\quad
+& \frac{h^2}{2}\bigl\lVert F_d(u)-f^\delta \bigr\rVert_2^2
++ \frac{\alpha}{2}\bigl\lVert \nabla u \bigr\rVert_{U_1}^2
+\\[0.6em]
+& {}+ \sum_{j=1}^{3}\lambda_j\left(
+\frac{1}{2}\bigl\lVert P[u_j/M_j]-D_jC_j \bigr\rVert_F^2
++ \beta_j\bigl\lVert C_j \bigr\rVert_1\right)
+\\[0.8em]
+\text{subject to}\quad
+& u\in U_{\mathrm{ad}},\qquad D_j^{\mathsf T}D_j=I,\qquad j=1,2,3.
 \end{aligned}
-$$
+```
 
 Here $F_d$ combines Bloch dynamics and sampled Fourier measurements, $f^\delta$ denotes noisy data, $P$ extracts image patches, and $M_j$ scales each parameter map. Orthogonal dictionaries $D_j$ and sparse coefficients $C_j$ describe local image structure; $U_{\mathrm{ad}}$ imposes parameter bounds. The gradient term provides spatial regularization.
 
