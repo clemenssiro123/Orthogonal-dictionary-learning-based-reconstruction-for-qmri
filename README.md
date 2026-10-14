@@ -81,7 +81,7 @@ Here $F_d$ combines Bloch dynamics and sampled Fourier measurements, $f^\delta$ 
 
 The supplied examples use `data/PWbrain256.mat` for reference parameter maps and `data/sequence_parameter_middle.mat` for the RF pulse sequence. Measurements are simulated from these inputs.
 
-To use your own reference maps, set `input_file` in the selected demo to a MAT file containing equally sized, finite, two-dimensional arrays named `T1`, `T2`, and `Density`. Relaxation times are in milliseconds; density must be nonnegative, with zero marking the background. Review the physical bounds, scaling, and sampling settings for the new input. The demos also include an optional artificial-phantom generator.
+To use your own reference maps, set `input_file` in the selected demo to a MAT file containing equally sized, finite, two-dimensional arrays named `T1`, `T2`, and `Density`. Relaxation times are in milliseconds; density must be nonnegative, with zero marking the background. Review the physical bounds, scaling, and sampling settings for the new input. The demos also include an optional very simple artificial-phantom generator.
 
 The solvers return reconstructed maps and iteration histories. The comparison demo additionally records errors, residuals, timings, and stopping reasons in `results.mat`.
 
