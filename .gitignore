@@ -1,0 +1,37 @@
+# Local scratch work, generated reports, and MATLAB settings/cache files.
+/tmp/
+/output/
+/MathWorks/
+
+# Keep numerical tests available locally, outside the published repository.
+/tests/
+/run_tests.m
+test_*.m
+
+# Local prox-linear comparison method and its dedicated objective helper.
+/prox_linear_reconstruction.m
+/demo_prox_linear_reconstruction.m
+/helper_functions/qmri_h1_objective.m
+
+# MATLAB editor backups and logs.
+*.asv
+*.m~
+*.log
+matlab_crash_dump*
+hs_err_pid*
+
+# Generated experiment folders. Keep the input MAT files directly in data/.
+/data/comparison_all_*/
+/data/parameter_search_*/
+/data/denoiser_calibration_*/
+
+# Generated artificial input maps.
+/data/artificial_maps.mat
+
+# Intermediate files written by the legacy main scripts.
+/clean_data.mat
+/blip_dictionary.mat
+/magnetization.mat
+/clean_dictionary.mat
+/data.mat
+/initial_datum.mat
