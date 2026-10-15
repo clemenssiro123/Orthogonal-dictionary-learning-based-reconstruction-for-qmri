@@ -37,7 +37,7 @@ The eight additional PDFs have small margins and linked zoom insets:
 
 Each of the six comparison files contains one row in this order: **ground truth, BLIP, Levenberg-Marquardt, one-step dictionary learning, nested dictionary learning**. Error panels show absolute differences from ground truth (milliseconds for T1/T2, original density units); the ground-truth error panel is zero. Every row shares one colorbar. Each initialization PDF contains **T1, T2, and density**, with a separate colorbar for each parameter. Color limits and the zoom region match the comparison PDFs.
 
-Adjust `design.RowPanelSize`, `design.RowPanelGap`, and `design.RowShowTitles` in the demo to control the compact layout; set `RowShowTitles=false` to omit headings. `MapLimits`, `ErrorLimits`, `MapColors`, `ErrorColors`, `ZeroBackground`, and `ZoomBox` apply to both the existing comparison grid and the compact PDFs.
+Adjust `design.RowPanelSize`, `design.RowPanelGap`, and `design.RowShowTitles` in the demo to control the compact layout; set `RowShowTitles=false` to omit comparison method headings. Both initialization PDFs always omit headings and parameter labels, keeping the colorbars and numeric ticks. `MapLimits`, `ErrorLimits`, `MapColors`, `ErrorColors`, `ZeroBackground`, and `ZoomBox` apply to both the existing comparison grid and the compact PDFs.
 
 The eight compact PDFs are exported without opening figure windows by default (`design.ShowRowFigures=false`); each hidden figure is closed after export. Set `design.ShowRowFigures=true` to inspect those figures on screen as well. The master switch `design.ShowFigures=false` hides all report and compact figures while still saving the PDFs.
 

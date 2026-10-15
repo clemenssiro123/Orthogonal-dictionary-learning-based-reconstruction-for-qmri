@@ -58,9 +58,9 @@ function zoom_box = export_reconstruction_comparison(truth,reconstructions,mask,
     headings(strcmp(headings,'One-step DL'))={'DL (one step)'}; % Shorten the one-step dictionary-learning heading for the portrait grid.
     headings(strcmp(headings,'Nested DL'))={'DL (nested)'}; % Shorten the nested dictionary-learning heading for the portrait grid.
     % Odd rows show maps; the following even rows show absolute errors.
-    labels={'T_1 maps (ms)','T_1 absolute error (ms)', ... % Define the T1 map/error row labels in milliseconds.
-        'T_2 maps (ms)','T_2 absolute error (ms)', ... % Define the T2 map/error row labels in milliseconds.
-        '\rho maps','\rho absolute error'}; % Define density map/error row labels using the TeX rho symbol.
+    labels={'','', ... % Define the T1 map/error row labels in milliseconds.
+        '','', ... % Define the T2 map/error row labels in milliseconds.
+        '',''}; % Define density map/error row labels using the TeX rho symbol.
     % Hidden figures can still be exported for unattended demo runs.
     visible='off'; if design.ShowFigures, visible='on'; end % Choose whether to display the figure window during export.
     fig=figure('Name','Map and error comparison with zoom insets','Color','w', ... % Create a white portrait comparison figure with a descriptive window title.

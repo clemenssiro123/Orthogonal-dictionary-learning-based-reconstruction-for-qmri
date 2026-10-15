@@ -36,7 +36,7 @@ function [pdf_paths,zoom_box] = export_reconstruction_rows(truth,reconstructions
     end
     if ~isfield(design,'RowPanelSize'), design.RowPanelSize=300; end % Default the longest displayed map side to 300 pixels for older saved designs.
     if ~isfield(design,'RowPanelGap'), design.RowPanelGap=14; end % Default the horizontal gap between maps to 14 pixels.
-    if ~isfield(design,'RowShowTitles'), design.RowShowTitles=true; end % Show method or parameter headings unless explicitly disabled.
+    if ~isfield(design,'RowShowTitles'), design.RowShowTitles=false; end % Show method or parameter headings unless explicitly disabled.
     if ~isfield(design,'ShowRowFigures'), design.ShowRowFigures=false; end % Export compact PDFs without opening windows by default, including for older saved runs.
     validateattributes(design.RowPanelSize,{'numeric'}, ... % Check the numeric map-size setting.
         {'real','finite','scalar','>=',100}); % Require a finite scalar size of at least 100 pixels.
@@ -57,8 +57,8 @@ function [pdf_paths,zoom_box] = export_reconstruction_rows(truth,reconstructions
     headings(strcmp(headings,'One-step DL'))={'DL (one step)'}; % Use a short, consistent heading for one-step dictionary learning.
     headings(strcmp(headings,'Nested DL'))={'DL (nested)'}; % Use a short, consistent heading for nested dictionary learning.
     stems={'T1','T2','Density'}; % Define the three parameter prefixes used in the PDF filenames.
-    map_labels={'T_1 (ms)','T_2 (ms)','Density'}; % Define map colorbar labels; TeX underscores produce subscripts.
-    error_labels={'T_1 absolute error (ms)','T_2 absolute error (ms)','Density absolute error'}; % Define error labels in the same physical units as the corresponding maps.
+    map_labels={'','',''}; % Define map colorbar labels; TeX underscores produce subscripts.
+    error_labels={'','',''}; % Define error labels in the same physical units as the corresponding maps.
     pdf_paths=cell(1,8); % Reserve one returned filename for each of the eight PDFs.
     for channel=1:3 % Export T1, T2 and density in channel order.
         for is_error=0:1 % For each channel, export the map first and its absolute error second.
