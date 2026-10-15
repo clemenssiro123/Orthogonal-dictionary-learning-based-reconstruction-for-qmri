@@ -2,7 +2,7 @@
 % Edit the input section and sections 1-3, then Run. Requires Optimization Toolbox for DL.
 % All four methods receive the SAME measurements and coarse-BLIP initial maps.
 % T1/T2 use milliseconds; optional input rescaling changes the simulated phantom.
-% Four PDFs and a small results MAT file are written to a new run folder in data.
+% Four reports, eight compact PDFs and results.mat are written to a new run folder in data.
 % Workflow: define settings -> simulate one acquisition -> compute one common
 % start -> run BLIP/LM/one-step DL/nested DL -> save metrics and PDF comparisons.
 % truth is used for synthetic data and evaluation. The solvers receive data
@@ -26,7 +26,7 @@ input_file=fullfile(root,'data','PWbrain256.mat'); % Or the full path to your MA
 % input_file=fullfile(root,'data','artificial_maps.mat');
 % save(input_file,'T1','T2','Density');
 % DOWNSAMPLING a 256-by-256 input: 1 -> 256-by-256, 2 -> 128-by-128, 4 -> 64-by-64.
-pixel_stride=2;             % Keep every pixel_stride-th row/column; no interpolation.
+pixel_stride=4;             % Keep every pixel_stride-th row/column; no interpolation.
 % Optional direct division is shown after loading the maps below.
 % Bounds are physical [T1(ms), T2(ms), Density], chosen for your input maps.
 % Keep time lower bounds positive and density lower bound zero.
@@ -39,7 +39,7 @@ scales=[5000 500 100];       % Numerical scales in the SAME units; not intensity
 % Also review the BLIP grid spacing below for the new range.
 
 %% 1. Shared experiment and coarse-grid BLIP initialization
-L=100; r=16; TR_ms=12;       % r must divide the reduced row count; r=1 works for any size.
+L=100; r=8; TR_ms=12;       % r must divide the reduced row count; r=1 works for any size.
 noise_std=1.0; seed=1;       % Standard deviation of EACH real/imaginary component.
 h=1;
 initial_use_body_mask=true; % Legacy initialization: zero density outside body.
@@ -118,13 +118,16 @@ design.FigureSize=[1500 850]; design.Resolution=200;
 design.ShowFigures=true; design.ZeroBackground=true; % Display copies only.
 design.ProfileRow=[];                            % [] chooses the middle row.
 design.ZoomBox=[]; % [row_first row_last col_first col_last] on reduced grid.
-% [] uses an automatic body region for the insets on page 2 of maps.pdf.
+% [] uses the same automatic body region in maps.pdf and the eight compact PDFs.
 % An explicit box also adds enlarged maps to profiles_and_summary.pdf.
 design.ZoomInsetFraction=.43; % Maximum inset side relative to the full map.
 design.ZoomColor=[1 .12 .28];  % ROI box, connector and inset border.
 design.ComparisonFigureSize=[1100 1320]; % Portrait map/error comparison page.
-output_folder=fullfile(root,'data',['comparison_all_' datestr(now,'yyyymmdd_HHMMSS')]);
-% The time-stamped folder holds this run's four reports and numerical results.
+design.RowPanelSize=300; design.RowPanelGap=14; % Compact PDF map size/gap in pixels.
+design.RowShowTitles=false; % false removes headings for an image-only comparison row.
+design.ShowRowFigures=false; % Export the eight compact PDFs without opening windows; true also requires ShowFigures=true.
+output_folder=fullfile(root,'data',['comparison_all_' datestr(now,'yyyymmdd_HHMMSS')]); % PDF DESTINATION: a new time-stamped folder inside this project's data directory.
+% The time-stamped folder holds all reports, compact rows and numerical results.
 
 %% 4. Generate ONE data set in the current physical units
 rng(seed);
@@ -317,6 +320,9 @@ export_pdf(fig,fullfile(output_folder,'maps.pdf'),design,false);
 % Publication-style grid: truth and all methods, alternating map/error rows.
 export_reconstruction_comparison(truth,reconstructions,mask,method_names, ...
     design,fullfile(output_folder,'maps.pdf'),true);
+% Six standalone comparison rows plus initialization maps/errors (three panels each).
+% Same scales, background masking and linked zooms as the portrait comparison.
+export_reconstruction_rows(truth,reconstructions,u0,mask,method_names,design,output_folder); % Create the eight compact PDFs here, using u0 for the two initialization pages.
 
 fig=new_figure('Absolute reconstruction errors',design);
 % Absolute errors are in ms for T1/T2 and the density map's original units.
@@ -487,36 +493,36 @@ function errors=body_errors(u,truth,mask)
     end
 end
 
-function fig=new_figure(name,design)
+function fig=new_figure(name,design) % Create a figure for the existing multi-page reports; writing happens in export_pdf below.
     % Apply the same geometry/fonts to each report page; off still allows PDF export.
-    visible='off'; if design.ShowFigures, visible='on'; end
-    fig=figure('Name',name,'Color','w','Visible',visible, ...
-        'Position',[40 40 design.FigureSize],'DefaultAxesFontName',design.FontName, ...
-        'DefaultAxesFontSize',design.FontSize,'DefaultTextFontName',design.FontName, ...
-        'DefaultTextFontSize',design.FontSize);
+    visible='off'; if design.ShowFigures, visible='on'; end % Hide report windows unless ShowFigures requests an on-screen display.
+    fig=figure('Name',name,'Color','w','Visible',visible, ... % Create a named white figure with the chosen visibility.
+        'Position',[40 40 design.FigureSize],'DefaultAxesFontName',design.FontName, ... % Apply the configured screen position/size and axes font family.
+        'DefaultAxesFontSize',design.FontSize,'DefaultTextFontName',design.FontName, ... % Set the axes font size and text font family for later plot elements.
+        'DefaultTextFontSize',design.FontSize); % Set the default text font size for the new report figure.
 end
 
-function show_map(ax,values,mask,limits,colors,design)
+function show_map(ax,values,mask,limits,colors,design) % Draw one parameter/error image in the existing report grid.
     % values is a plotting copy; masking and intensity limits leave solver maps untouched.
-    if design.ZeroBackground, values(~mask)=0; end
-    imagesc(ax,values,limits); axis(ax,'image'); axis(ax,'off'); colormap(ax,colors);
+    if design.ZeroBackground, values(~mask)=0; end % Optionally zero the displayed background without changing the original maps.
+    imagesc(ax,values,limits); axis(ax,'image'); axis(ax,'off'); colormap(ax,colors); % Apply the numeric scale, preserve square pixels, hide axes and set this image's colormap.
 end
 
-function draw_curve(x,y,method,design)
+function draw_curve(x,y,method,design) % Draw a convergence/profile curve using this method's consistent visual style.
     % Reuse each method's color/style across every convergence and profile panel.
-    plot(x,y,'Color',design.MethodColors(method,:),'LineStyle',design.LineStyles{method}, ...
-        'LineWidth',design.LineWidth);
+    plot(x,y,'Color',design.MethodColors(method,:),'LineStyle',design.LineStyles{method}, ... % Plot the supplied x/y samples with the method's color and line pattern.
+        'LineWidth',design.LineWidth); % Use the common configured line thickness.
 end
 
-function export_pdf(fig,path,design,append)
+function export_pdf(fig,path,design,append) % Write one existing report page to path, optionally appending it to earlier pages.
     % Hide interactive controls, finish pending graphics updates, then write a page.
-    axes_list=findall(fig,'Type','axes');
-    for ax=axes_list.'
-        if ~isempty(ax.Toolbar), ax.Toolbar.Visible='off'; end % Exclude hover controls.
+    axes_list=findall(fig,'Type','axes'); % Find every axes belonging to this figure.
+    for ax=axes_list.' % Visit each axes handle to prepare the figure for export.
+        if ~isempty(ax.Toolbar), ax.Toolbar.Visible='off'; end % Exclude hover controls. % This keeps interactive toolbar buttons out of the PDF page.
     end
-    drawnow;
+    drawnow; % Finish pending drawing and layout before writing the file.
     % append=false starts the PDF; append=true adds the next page to it.
-    exportgraphics(fig,path,'ContentType','vector','BackgroundColor','white', ...
-        'Resolution',design.Resolution,'Append',append);
-    if ~design.ShowFigures, close(fig); end
+    exportgraphics(fig,path,'ContentType','vector','BackgroundColor','white', ... % WRITE THE PDF HERE: save this existing report figure at the supplied filename.
+        'Resolution',design.Resolution,'Append',append); % Apply the export resolution; append=true preserves earlier pages in this PDF.
+    if ~design.ShowFigures, close(fig); end % Release hidden report figures after writing; keep visible windows open.
 end

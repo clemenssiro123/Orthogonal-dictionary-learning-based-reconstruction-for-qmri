@@ -1,4 +1,4 @@
-function zoom_box = export_reconstruction_comparison(truth,reconstructions,mask,method_names,design,path,append)
+function zoom_box = export_reconstruction_comparison(truth,reconstructions,mask,method_names,design,path,append) % Write or append the portrait comparison page to path and return the chosen crop.
 %EXPORT_RECONSTRUCTION_COMPARISON Map/error grid with linked zoom insets.
 % MATLAB R2021b. Display only: no interpolation toolbox or solver rerun needed.
 % Columns are ground truth followed by the reconstruction methods. Each
@@ -28,185 +28,121 @@ function zoom_box = export_reconstruction_comparison(truth,reconstructions,mask,
 
     %% 1. Fill optional display settings and check compatible input sizes
     % nargin counts supplied inputs; omitting APPEND starts a new PDF.
-    if nargin<7, append=false; end
+    if nargin<7, append=false; end % Start a new PDF by default when the optional append argument is omitted.
     % Only fill missing options; explicitly supplied settings take precedence.
-    if ~isfield(design,'ZoomBox'), design.ZoomBox=[]; end
-    if ~isfield(design,'ZoomInsetFraction'), design.ZoomInsetFraction=.43; end
-    if ~isfield(design,'ZoomColor'), design.ZoomColor=[1 .12 .28]; end
-    if ~isfield(design,'ComparisonFigureSize'), design.ComparisonFigureSize=[1100 1320]; end
-    [n,m,channels]=size(truth);
+    if ~isfield(design,'ComparisonFigureSize'), design.ComparisonFigureSize=[1100 1320]; end % Use the default portrait figure size when an older design lacks this field.
+    [n,m,channels]=size(truth); % Read the reference image height, width and number of parameter channels.
     % assert stops with an explanatory message if a required condition fails.
     % These checks prevent misleading comparisons of differently sized maps.
-    assert(channels==3 && n>=2 && m>=2,'Truth must contain three 2-D parameter maps.');
-    assert(isequal(size(mask),[n m]),'Mask and parameter maps must have the same size.');
-    assert(numel(reconstructions)==numel(method_names) && ~isempty(reconstructions), ...
-        'Provide one name per reconstruction.');
-    for k=1:numel(reconstructions)
-        assert(isequal(size(reconstructions{k}),size(truth)), ...
-            'Each reconstruction must have the same size as truth.');
+    assert(channels==3 && n>=2 && m>=2,'Truth must contain three 2-D parameter maps.'); % Require three parameter maps with at least two rows and columns.
+    assert(isequal(size(mask),[n m]),'Mask and parameter maps must have the same size.'); % Require a mask with the same two-dimensional image size.
+    assert(numel(reconstructions)==numel(method_names) && ~isempty(reconstructions), ... % Require nonempty reconstruction data and one method name per result.
+        'Provide one name per reconstruction.'); % Explain a mismatch between results and their names.
+    for k=1:numel(reconstructions) % Check the dimensions of every supplied reconstruction.
+        assert(isequal(size(reconstructions{k}),size(truth)), ... % Require the same array size as the reference maps.
+            'Each reconstruction must have the same size as truth.'); % Explain why differently sized results cannot be plotted together.
     end
-    % Limit inset size and require valid RGB values and positive figure sizes.
-    validateattributes(design.ZoomInsetFraction,{'numeric'}, ...
-        {'real','finite','scalar','>=',.15,'<=',.65});
-    validateattributes(design.ZoomColor,{'numeric'}, ...
-        {'real','finite','vector','numel',3,'>=',0,'<=',1});
-    validateattributes(design.ComparisonFigureSize,{'numeric'}, ...
-        {'real','finite','vector','numel',2,'positive'});
+    % Require positive figure sizes; shared helpers validate the zoom settings.
+    validateattributes(design.ComparisonFigureSize,{'numeric'}, ... % Check the numeric portrait figure-size setting.
+        {'real','finite','vector','numel',2,'positive'}); % Require two finite positive values for width and height.
     %% 2. Select one common zoom region for every map and error panel
-    zoom_box=design.ZoomBox;
-    if isempty(zoom_box)
-        % Locate the body's bounding box; use the full image for an empty mask.
-        [body_rows,body_cols]=find(mask);
-        if isempty(body_rows), body_rows=[1;n]; body_cols=[1;m]; end
-        row_extent=max(body_rows)-min(body_rows);
-        col_extent=max(body_cols)-min(body_cols);
-        % Choose a lower-left crop relative to that box, clipped to the image.
-        % min/max also ensure that the crop contains at least two pixels per side.
-        first_row=min(n-1,max(1,round(min(body_rows)+.56*row_extent)));
-        last_row=min(n,max(first_row+1,round(min(body_rows)+.72*row_extent)));
-        first_col=min(m-1,max(1,round(min(body_cols)+.22*col_extent)));
-        last_col=min(m,max(first_col+1,round(min(body_cols)+.38*col_extent)));
-        zoom_box=[first_row last_row first_col last_col];
-    end
-    % A manually supplied crop must use valid, inclusive integer pixel indices.
-    validateattributes(zoom_box,{'numeric'}, ...
-        {'real','finite','integer','vector','numel',4,'positive'});
-    assert(zoom_box(1)<zoom_box(2) && zoom_box(2)<=n && ...
-        zoom_box(3)<zoom_box(4) && zoom_box(4)<=m, ...
-        'ZoomBox must select at least 2 rows/columns within the reduced map grid.');
+    [zoom_box,design]=comparison_zoom_box(mask,design); % Reuse the same zoom selection and validation as the compact PDF exporter.
     % Turn the four bounding indices into row/column vectors for direct indexing.
-    rows=zoom_box(1):zoom_box(2); cols=zoom_box(3):zoom_box(4);
+    rows=zoom_box(1):zoom_box(2); cols=zoom_box(3):zoom_box(4); % Turn the inclusive crop boundaries into index vectors for the shared inset.
 
     %% 3. Arrange the column headings and create the comparison figure
     % Prepend the reference to the methods; its own error panel is therefore zero.
-    shown=[{truth} reshape(reconstructions,1,[])];
-    headings=[{'Ground truth'} reshape(method_names,1,[])];
+    shown=[{truth} reshape(reconstructions,1,[])]; % Place reference maps first, followed by results in the caller's method order.
+    headings=[{'Ground truth'} reshape(method_names,1,[])]; % Construct headings in the same order as the displayed maps.
     % Short publication headings for the demo's two dictionary methods.
-    headings(strcmp(headings,'One-step DL'))={'DL (one step)'};
-    headings(strcmp(headings,'Nested DL'))={'DL (nested)'};
+    headings(strcmp(headings,'One-step DL'))={'DL (one step)'}; % Shorten the one-step dictionary-learning heading for the portrait grid.
+    headings(strcmp(headings,'Nested DL'))={'DL (nested)'}; % Shorten the nested dictionary-learning heading for the portrait grid.
     % Odd rows show maps; the following even rows show absolute errors.
-    labels={'T_1 maps (ms)','T_1 absolute error (ms)', ...
-        'T_2 maps (ms)','T_2 absolute error (ms)', ...
-        '\rho maps','\rho absolute error'};
+    labels={'T_1 maps (ms)','T_1 absolute error (ms)', ... % Define the T1 map/error row labels in milliseconds.
+        'T_2 maps (ms)','T_2 absolute error (ms)', ... % Define the T2 map/error row labels in milliseconds.
+        '\rho maps','\rho absolute error'}; % Define density map/error row labels using the TeX rho symbol.
     % Hidden figures can still be exported for unattended demo runs.
-    visible='off'; if design.ShowFigures, visible='on'; end
-    fig=figure('Name','Map and error comparison with zoom insets','Color','w', ...
-        'Visible',visible,'Units','pixels','Position',[40 40 design.ComparisonFigureSize], ...
-        'DefaultAxesFontName',design.FontName,'DefaultAxesFontSize',design.FontSize, ...
-        'DefaultTextFontName',design.FontName,'DefaultTextFontSize',design.FontSize);
+    visible='off'; if design.ShowFigures, visible='on'; end % Choose whether to display the figure window during export.
+    fig=figure('Name','Map and error comparison with zoom insets','Color','w', ... % Create a white portrait comparison figure with a descriptive window title.
+        'Visible',visible,'Units','pixels','Position',[40 40 design.ComparisonFigureSize], ... % Apply visibility and the configured pixel position/size.
+        'DefaultAxesFontName',design.FontName,'DefaultAxesFontSize',design.FontSize, ... % Set the default axes font family and size.
+        'DefaultTextFontName',design.FontName,'DefaultTextFontSize',design.FontSize); % Set the default text font family and size.
     % exportgraphics crops to visible content; this white frame preserves
     % page margins around titles, rotated labels and the footer.
-    annotation(fig,'rectangle',[.001 .001 .998 .998],'Color','w','LineWidth',.1);
+    annotation(fig,'rectangle',[.001 .001 .998 .998],'Color','w','LineWidth',.1); % Preserve page margins when exportgraphics crops to the figure's contents.
     % Explicit positions keep ALL panels equally sized, including the ones
     % beside the shared colorbars. Compute in pixels to preserve the layout.
     %% 4. Compute a uniform six-row layout with space for labels and colorbars
-    position=get(fig,'Position'); width=position(3); height=position(4);
-    columns=numel(shown); gap_x=18; gap_y=16; group_gap=12;
-    left=65; right=72; top=49; bottom=53;
+    position=get(fig,'Position'); width=position(3); height=position(4); % Read the actual figure dimensions used for layout calculations.
+    columns=numel(shown); gap_x=18; gap_y=16; group_gap=12; % Count columns and set pixel gaps between columns, rows and parameter groups.
+    left=65; right=72; top=49; bottom=53; % Reserve outer space for row labels, headings, colorbars and the footer.
     % Fit square panel positions into both available width and available height.
     % The extra group gaps separate the T1, T2 and density row pairs.
-    side=min((width-left-right-(columns-1)*gap_x)/columns, ...
-        (height-top-bottom-5*gap_y-2*group_gap)/6);
-    assert(side>0,'ComparisonFigureSize is too small for the comparison grid.');
+    side=min((width-left-right-(columns-1)*gap_x)/columns, ... % Calculate the largest square panel side allowed by the available page width.
+        (height-top-bottom-5*gap_y-2*group_gap)/6); % Also constrain the side to fit all six rows and their vertical gaps.
+    assert(side>0,'ComparisonFigureSize is too small for the comparison grid.'); % Reject a figure size that leaves no room for the map grid.
     % Center the complete grid horizontally within the reserved margins.
-    left=left+(width-left-right-columns*side-(columns-1)*gap_x)/2;
+    left=left+(width-left-right-columns*side-(columns-1)*gap_x)/2; % Center the complete grid horizontally inside the reserved margins.
 
     %% 5. Draw maps, absolute errors and identical zoom windows
-    for row=1:6
+    for row=1:6 % Draw the six rows: T1 map/error, T2 map/error, and density map/error.
         % Rows 1/2 use channel 1, rows 3/4 channel 2, and rows 5/6 channel 3.
-        channel=ceil(row/2); is_error=mod(row,2)==0;
+        channel=ceil(row/2); is_error=mod(row,2)==0; % Map each pair of rows to one parameter and mark every even row as an error row.
         % Select these once per row so all methods have identical color scaling.
-        if is_error
-            limits=design.ErrorLimits(channel,:); colors=design.ErrorColors;
-        else
-            limits=design.MapLimits(channel,:); colors=design.MapColors{channel};
+        if is_error % Select shared display settings for an absolute-error row.
+            limits=design.ErrorLimits(channel,:); colors=design.ErrorColors; % Use this parameter's error limits and the error colormap.
+        else % Otherwise select settings for a parameter-map row.
+            limits=design.MapLimits(channel,:); colors=design.MapColors{channel}; % Use this parameter's map limits and colormap.
         end
         % Figure coordinates start at the bottom; rows are filled from the top.
-        bottom_y=height-top-row*side-(row-1)*gap_y-floor((row-1)/2)*group_gap;
-        for column=1:columns
+        bottom_y=height-top-row*side-(row-1)*gap_y-floor((row-1)/2)*group_gap; % Place this row from the top down, including the extra gaps between parameter pairs.
+        for column=1:columns % Draw ground truth and all reconstruction columns in order.
             % Convert the calculated pixel position into normalized figure units.
-            pos=[left+(column-1)*(side+gap_x) bottom_y side side]./[width height width height];
-            ax=axes('Parent',fig,'Units','normalized','Position',pos);
+            pos=[left+(column-1)*(side+gap_x) bottom_y side side]./[width height width height]; % Convert this panel's pixel rectangle to normalized figure coordinates.
+            ax=axes('Parent',fig,'Units','normalized','Position',pos); % Create an axes with the same panel size as all other columns.
             % Work on a local display array; the stored reconstruction is unchanged.
-            values=shown{column}(:,:,channel);
+            values=shown{column}(:,:,channel); % Extract the current parameter from this column's maps.
             % Error is in the same physical units as the corresponding parameter.
-            if is_error, values=abs(values-truth(:,:,channel)); end
-            if design.ZeroBackground, values(~mask)=0; end
+            if is_error, values=abs(values-truth(:,:,channel)); end % For error rows, compute the absolute difference from the reference parameter.
+            if design.ZeroBackground, values(~mask)=0; end % Optionally mask the background in the display copy only.
             % Draw the full image, crop box, connector and magnified crop together.
-            draw_panel(ax,values,rows,cols,limits,colors,design);
+            draw_comparison_panel(ax,values,rows,cols,limits,colors,design); % Reuse the common full-map/inset drawing helper.
             % A single title at the top identifies each complete method column.
-            if row==1
-                title(ax,headings{column},'FontWeight','normal', ...
-                    'FontSize',design.FontSize+3,'Interpreter','none');
+            if row==1 % Put a column heading above the first row only.
+                title(ax,headings{column},'FontWeight','normal', ... % Draw the current method name without bold text.
+                    'FontSize',design.FontSize+3,'Interpreter','none'); % Use a slightly larger heading font and keep the name as literal text.
             end
             % A single rotated label at the left identifies each complete row.
-            if column==1
-                text(ax,-.10,.5,labels{row},'Units','normalized','Rotation',90, ...
-                    'HorizontalAlignment','center','VerticalAlignment','bottom', ...
-                    'FontSize',design.FontSize+1,'Interpreter','tex','Clipping','off');
+            if column==1 % Put the parameter/error label beside the first column only.
+                text(ax,-.10,.5,labels{row},'Units','normalized','Rotation',90, ... % Place the label left of the image and rotate it vertically.
+                    'HorizontalAlignment','center','VerticalAlignment','bottom', ... % Center the label along the row while anchoring its edge beside the panel.
+                    'FontSize',design.FontSize+1,'Interpreter','tex','Clipping','off'); % Allow TeX subscripts and let the label extend outside the image axes.
             end
             % Share the last panel's colorbar across its entire row.
-            if column==columns
-                cb=colorbar(ax);
-                cb.Units='normalized';
-                cb.Position=[pos(1)+pos(3)+9/width pos(2) 10/width pos(4)];
-                cb.FontSize=design.FontSize-1;
+            if column==columns % Place one shared colorbar beside the last panel in each row.
+                cb=colorbar(ax); % Create a bar linked to this row's color limits and colormap.
+                cb.Units='normalized'; % Use normalized figure units for manual colorbar placement.
+                cb.Position=[pos(1)+pos(3)+9/width pos(2) 10/width pos(4)]; % Place the bar beside the last panel and match the panel height.
+                cb.FontSize=design.FontSize-1; % Use slightly smaller tick text to keep the portrait grid compact.
                 % Creating a colorbar can shrink axes; restore the common panel size.
-                ax.Position=pos;
+                ax.Position=pos; % Restore panel geometry after MATLAB makes room for the colorbar.
             end
         end
     end
     %% 6. Record the crop coordinates and write or append the PDF page
     % The footer records both the crop and whether the body mask was displayed.
-    background='Background shown';
-    if design.ZeroBackground, background='Background masked for display'; end
-    caption=sprintf(['Zoom: rows %d-%d, columns %d-%d (reconstruction grid).  %s.\n' ...
-        'Absolute errors in physical units; shared color limits within each row; values above the limits saturate.'], ...
-        zoom_box,background);
-    annotation(fig,'textbox',[.045 .006 .94 .03],'String',caption, ...
-        'EdgeColor','none','FontName',design.FontName,'FontSize',design.FontSize-1, ...
-        'Interpreter','none','VerticalAlignment','middle','HorizontalAlignment','center');
+    background='Background shown'; % Prepare the footer statement for an unmasked display.
+    if design.ZeroBackground, background='Background masked for display'; end % Replace that statement when the displayed background has been zeroed.
+    caption=sprintf(['Zoom: rows %d-%d, columns %d-%d (reconstruction grid).  %s.\n' ... % Build the footer with crop indices and the background-display description.
+        'Absolute errors in physical units; shared color limits within each row; values above the limits saturate.'], ... % Explain error units, common scales and saturation above the displayed limits.
+        zoom_box,background); % Insert the selected crop coordinates and background description into the caption.
+    annotation(fig,'textbox',[.045 .006 .94 .03],'String',caption, ... % Place the footer in a textbox along the bottom of the page.
+        'EdgeColor','none','FontName',design.FontName,'FontSize',design.FontSize-1, ... % Remove its border and use the configured font with a slightly smaller size.
+        'Interpreter','none','VerticalAlignment','middle','HorizontalAlignment','center'); % Render literal text and center the footer within its textbox.
     % Finish graphics layout before exporting; APPEND preserves earlier PDF pages.
-    drawnow;
-    exportgraphics(fig,path,'ContentType','vector','BackgroundColor','white', ...
-        'Resolution',design.Resolution,'Append',append);
+    drawnow; % Wait for the graphics layout to finish before exporting.
+    exportgraphics(fig,path,'ContentType','vector','BackgroundColor','white', ... % WRITE THE PDF HERE: export the portrait figure to the caller's path.
+        'Resolution',design.Resolution,'Append',append); % Use the configured resolution and either append a page or replace the PDF.
     % Hidden figures have served their purpose once the PDF has been written.
-    if ~design.ShowFigures, close(fig); end
-end
-
-function draw_panel(ax,values,rows,cols,limits,colors,design)
-    %% Draw the full map and its inset in the same image coordinate system
-    [n,m]=size(values);
-    % imagesc maps physical values through the specified common row limits.
-    imagesc(ax,values,limits); colormap(ax,colors);
-    % Equal pixel aspect ratio preserves anatomy; hold keeps the image when adding lines.
-    axis(ax,'image'); axis(ax,'off'); hold(ax,'on');
-    if ~isempty(ax.Toolbar), ax.Toolbar.Visible='off'; end
-    % Keep the crop's aspect ratio. Insets are images in the SAME axes as
-    % their parent map, sharing its colormap and limits without resampling.
-    crop=values(rows,cols); crop_size=size(crop);
-    % Scale both crop dimensions equally; the longer side sets the requested size.
-    magnification=design.ZoomInsetFraction*min(n,m)/max(crop_size);
-    inset_width=crop_size(2)*magnification;
-    inset_height=crop_size(1)*magnification;
-    % Put the inset inside the upper-right image corner with a small margin.
-    % Image row coordinates increase downward, so a small Y value is near the top.
-    pad=.02*min(n,m);
-    inset_left=m+.5-pad-inset_width; inset_top=.5+pad;
-    % Pixel centers are integers, so subtract half a pixel to outline their edges.
-    roi=[cols(1)-.5 rows(1)-.5 numel(cols) numel(rows)];
-    % Connect the crop's upper-right corner to the inset's lower-left corner.
-    line(ax,[roi(1)+roi(3) inset_left], ...
-        [roi(2) inset_top+inset_height],'Color',design.ZoomColor,'LineWidth',.8);
-    rectangle(ax,'Position',roi,'EdgeColor',design.ZoomColor,'LineWidth',.8);
-    % XData/YData specify pixel CENTERS, whereas rectangles follow edges.
-    image(ax,'CData',crop,'CDataMapping','scaled', ...
-        'XData',inset_left+[.5 crop_size(2)-.5]*magnification, ...
-        'YData',inset_top+[.5 crop_size(1)-.5]*magnification);
-    % Outline the inset after drawing it, then add a subtle frame around the map.
-    rectangle(ax,'Position',[inset_left inset_top inset_width inset_height], ...
-        'EdgeColor',design.ZoomColor,'LineWidth',1);
-    rectangle(ax,'Position',[.5 .5 m n],'EdgeColor',[.18 .18 .18],'LineWidth',.5);
-    % Fix the original image extent so annotation objects cannot expand the axes.
-    xlim(ax,[.5 m+.5]); ylim(ax,[.5 n+.5]);
+    if ~design.ShowFigures, close(fig); end % Close hidden figures after export; retain visible figures for inspection.
 end

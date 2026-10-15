@@ -26,7 +26,32 @@ The current implementation is best used at **128 x 128 pixels**, which is the re
 demo_compare_all_reconstructions
 ```
 
-The script adds its helper folders to the MATLAB path automatically. It displays reconstructions and diagnostics, and saves `results.mat` together with four PDF reports (`maps.pdf`, `errors.pdf`, `convergence.pdf`, and `profiles_and_summary.pdf`) in a new `data/comparison_all_<timestamp>/` folder. Generated results are excluded from Git.
+The script adds its helper folders to the MATLAB path automatically. It displays reconstructions and diagnostics, and saves `results.mat`, four PDF reports (`maps.pdf`, `errors.pdf`, `convergence.pdf`, and `profiles_and_summary.pdf`), and eight compact PDFs in a new `data/comparison_all_<timestamp>/` folder. Generated results are excluded from Git.
+
+The eight additional PDFs have small margins and linked zoom insets:
+
+- `T1_map_comparison.pdf` and `T1_error_comparison.pdf`
+- `T2_map_comparison.pdf` and `T2_error_comparison.pdf`
+- `Density_map_comparison.pdf` and `Density_error_comparison.pdf`
+- `initialization_maps.pdf` and `initialization_errors.pdf`
+
+Each of the six comparison files contains one row in this order: **ground truth, BLIP, Levenberg-Marquardt, one-step dictionary learning, nested dictionary learning**. Error panels show absolute differences from ground truth (milliseconds for T1/T2, original density units); the ground-truth error panel is zero. Every row shares one colorbar. Each initialization PDF contains **T1, T2, and density**, with a separate colorbar for each parameter. Color limits and the zoom region match the comparison PDFs.
+
+Adjust `design.RowPanelSize`, `design.RowPanelGap`, and `design.RowShowTitles` in the demo to control the compact layout; set `RowShowTitles=false` to omit headings. `MapLimits`, `ErrorLimits`, `MapColors`, `ErrorColors`, `ZeroBackground`, and `ZoomBox` apply to both the existing comparison grid and the compact PDFs.
+
+The eight compact PDFs are exported without opening figure windows by default (`design.ShowRowFigures=false`); each hidden figure is closed after export. Set `design.ShowRowFigures=true` to inspect those figures on screen as well. The master switch `design.ShowFigures=false` hides all report and compact figures while still saving the PDFs.
+
+To generate only the eight compact PDFs from an existing experiment, without rerunning the solvers:
+
+```matlab
+run_folder = fullfile(pwd,'data','comparison_all_<timestamp>'); % Choose your saved run.
+s = load(fullfile(run_folder,'results.mat'));
+s.design.ShowFigures = false;
+[pdf_paths, zoom_box] = export_reconstruction_rows(s.truth,s.reconstructions, ...
+    s.u0,s.mask,s.method_names,s.design,run_folder);
+```
+
+This replaces any compact PDFs with the same filenames; the saved `results.mat` and four existing reports are unchanged. Missing compact-layout settings in older runs use the defaults.
 
 For the supplied input, `pixel_stride = 1` uses the full 256 x 256 resolution; this requires substantially more computation. The undersampling factor `r` must divide the reconstructed image's row count.
 
