@@ -9,6 +9,7 @@ The main demonstration compares BLIP, projected Levenberg-Marquardt (LM), one-st
 ## Tested environment
 
 The code has been tested on a **Dell XPS 17 laptop running Windows with MATLAB R2021b**.
+The notebook is an XPS 17 9710 with an Intel Core i7-11800H processor (8 cores, 16 threads), 64 GB RAM, and an NVIDIA GeForce RTX 3060 Laptop GPU, running Windows 11 Home.
 
 - MATLAB R2021b.
 - Optimization Toolbox for the dictionary-regularized reconstruction routines, which use `quadprog`.
