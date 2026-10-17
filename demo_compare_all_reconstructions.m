@@ -26,7 +26,7 @@ input_file=fullfile(root,'data','PWbrain256.mat'); % Or the full path to your MA
 % input_file=fullfile(root,'data','artificial_maps.mat');
 % save(input_file,'T1','T2','Density');
 % DOWNSAMPLING a 256-by-256 input: 1 -> 256-by-256, 2 -> 128-by-128, 4 -> 64-by-64.
-pixel_stride=2;             % Keep every pixel_stride-th row/column; no interpolation.
+pixel_stride=1;             % Keep every pixel_stride-th row/column; no interpolation.
 % Optional direct division is shown after loading the maps below.
 % Bounds are physical [T1(ms), T2(ms), Density], chosen for your input maps.
 % Keep time lower bounds positive and density lower bound zero.
@@ -69,12 +69,14 @@ blip_options=struct('T1Grid',unique([lower_bounds(1):fine_spacing(1):upper_bound
 % GaussNewton chooses local Gram curvature or exact sampled FFT products.
 % Tolerance tests map stationarity; LinearTolerance tests the normal equations.
 % InitialDamping/DampingDecay/MinDamping define the geometric damping schedule.
+% InitialDamping=r^2 follows Dong et al. (2019), sec. 4.4 (their s equals r).
+% Decay and iteration budget are the settings checked for this implementation.
 lm_options=struct('MaxIterations',15,'GaussNewton','approximate', ...
     'InitialDamping',r^2,'DampingDecay',.15,'MinDamping',1e-8, ...
     'ResidualDampingWeight',1e-15,'LinearTolerance',1e-8, ...
     'LinearMaxIterations',500,'Tolerance',1e-6,'StepTolerance',0, ...
     'NoiseLevel',[],'DiscrepancyFactor',1.1,'Verbose',true);
-% NoiseLevel=[] gives the paper's manually chosen iteration budget. To use
+% NoiseLevel=[] uses the fixed iteration budget above. To use
 % discrepancy stopping instead, set the noise norm after data generation.
 
 % One-step DL: exactly one D/C update pair per map and outer iteration.
