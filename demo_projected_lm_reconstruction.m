@@ -4,6 +4,7 @@
 % pasted algorithm. Each update is an unconstrained solve followed by clipping.
 % Damping follows a schedule; objective increases are retained.
 % Known body support is used for initialization, diagnostics and display.
+% Optional saved 128/256 presets: see the selector after section 1 below.
 % Workflow: generate one noisy data set -> initialize physical maps -> solve
 % damped normal equations and clip to bounds -> inspect fit, errors and steps.
 % Clear previous variables/figures, then seed random noise for reproducible runs.
@@ -37,16 +38,6 @@ initial_values=[2000 200 50]; % Uniform foreground start, inside all three bound
 % If you divide a map below, adjust its bounds, scales, reference_times
 % and initial_values manually; these settings are not changed automatically.
 
-%% Plot design: same defaults as demo_compare_all_reconstructions
-% These options affect display copies and PDF exports only.
-design=reconstruction_plot_design(lower_bounds,upper_bounds,2);
-design.ShowFigures=true; design.ShowRowFigures=false;
-design.ZeroBackground=true; design.RowShowTitles=false;
-design.ProfileRow=[]; % [] chooses the middle row.
-design.ZoomBox=[]; % [first_row last_row first_col last_col]; [] selects a body region.
-% MapLimits, ErrorLimits, MapColors, ErrorColors and sizes are editable in design.
-output_folder=fullfile(root,'data','demo_reports',['projected_lm_' datestr(now,'yyyymmdd_HHMMSS')]);
-
 %% 1. Acquisition and solver settings
 L=100;
 r=32;                      % Must divide the reduced row count; r=1 works for any size.
@@ -70,6 +61,35 @@ noise_level=[];          % delta: noise NORM, not sigma; [] estimates it below.
 % With no spatial prior there are no exterior Dirichlet conditions. The
 % reference times are just the coordinate origin and background initialization.
 % See Dong et al. (2019), sec. 4.4: https://arxiv.org/pdf/1903.11979
+
+%% Optional saved qMRI parameters
+% [] keeps this demo's manual settings above. Uncomment ONE preset to load it.
+% Presets assume a 256-by-256 input; they override acquisition, bounds/scales
+% and solver settings. The input file and uniform initialization stay as above.
+parameters=[];
+% parameters=reconstruction_parameters_128(); % Saved 128-by-128 baseline.
+% parameters=reconstruction_parameters_256(); % Independent 256-by-256 copy to tune.
+% Put one-run changes to parameters HERE, before the assignments below.
+if ~isempty(parameters)
+    pixel_stride=parameters.pixel_stride;
+    lower_bounds=parameters.lower_bounds; upper_bounds=parameters.upper_bounds;
+    reference_times=parameters.reference_times; scales=parameters.scales;
+    L=parameters.L; r=parameters.r; TR_ms=parameters.TR_ms;
+    noise_std=parameters.noise_std;
+    rng(parameters.seed);
+    use_discrepancy=~isempty(parameters.lm_options.NoiseLevel);
+    noise_level=parameters.lm_options.NoiseLevel;
+end
+
+%% Plot design: same defaults as demo_compare_all_reconstructions
+% These options affect display copies and PDF exports only.
+design=reconstruction_plot_design(lower_bounds,upper_bounds,2);
+design.ShowFigures=true; design.ShowRowFigures=false;
+design.ZeroBackground=true; design.RowShowTitles=false;
+design.ProfileRow=[]; % [] chooses the middle row.
+design.ZoomBox=[]; % [first_row last_row first_col last_col]; [] selects a body region.
+% MapLimits, ErrorLimits, MapColors, ErrorColors and sizes are editable in design.
+output_folder=fullfile(root,'data','demo_reports',['projected_lm_' datestr(now,'yyyymmdd_HHMMSS')]);
 
 %% 2. Physical truth and sampled Fourier data
 % Load physical reference maps. Positive background T1/T2 values keep the
@@ -151,15 +171,22 @@ options=struct('Scales',scales,'ReferenceTimes',reference_times,'H',1, ...
     'ResidualDampingWeight',residual_damping_weight,'MinDamping',min_damping, ...
     'NoiseLevel',noise_level,'DiscrepancyFactor',discrepancy_factor, ...
     'LinearTolerance',linear_tolerance,'LinearMaxIterations',linear_max_iterations,'Verbose',true);
+if ~isempty(parameters)
+    % Copy all saved solver controls; retain the runtime maps/mask above.
+    for field=fieldnames(parameters.lm_options).'
+        name=field{1}; options.(name)=parameters.lm_options.(name);
+    end
+    options.H=parameters.h;
+end
 fprintf('Projected LM: %dx%d, L=%d, r=%d, physical L2 damping, data only, GN=%s\n', ...
-    n,m,L,r,gauss_newton);
+    n,m,L,r,options.GaussNewton);
 [reconstruction,info]=projected_lm_reconstruction(data,RF,TR,r,zeta,reference_start,options);
 % The solver returns physical maps and histories that include the starting point.
 % A budget, discrepancy or small-step stop is distinct from stationarity.
 fprintf('Stopped by %s after %d updates / %d linear solves, %.2f seconds.\n', ...
     info.stop_reason,info.iterations,info.total_linear_solves,info.elapsed_seconds);
 fprintf('Final outer projected gradient: %.6g; stationarity tolerance: %.6g.\n', ...
-    info.projected_gradient(end),stationarity_tolerance);
+    info.projected_gradient(end),options.Tolerance);
 if use_discrepancy
     fprintf('Measured residual: %.6g; tau*delta: %.6g; discrepancy satisfied: %d.\n', ...
         info.data_residual_norm(end),info.discrepancy_threshold,info.discrepancy_satisfied);

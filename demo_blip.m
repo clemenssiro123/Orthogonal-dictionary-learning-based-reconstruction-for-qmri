@@ -3,6 +3,7 @@
 % It creates noisy, undersampled Fourier data, calls the existing BLIP
 % routine, and compares its output with the known parameter maps.
 % Default inputs are read only; the optional artificial input is saved explicitly below.
+% Optional saved 128/256 presets: see the selector after section 1 below.
 % Workflow: choose acquisition settings -> load truth -> simulate sampled
 % measurements -> build a Bloch dictionary -> reconstruct -> evaluate/plot.
 % This demo calls the legacy helper BLIP.m; the four-method demo uses the
@@ -47,6 +48,23 @@ repetition_time_ms = 10; % Constant illustrative MRF-scale TR; simulator TE = TR
 rng(1);                % Fixed seed makes repeated experiments reproducible.
 % For a basic noiseless check, set r = 1 and noise_std = 0.
 % Dictionary discretization can still cause error in that case.
+
+%% Optional saved qMRI acquisition and dictionary grid
+% [] keeps the manual settings above. Uncomment ONE preset to load it.
+% This legacy solver keeps its own zero start, support mask and 20-trial budget.
+% For the preset's full BLIP solver options, use demo_compare_all_reconstructions.
+parameters=[];
+% parameters=reconstruction_parameters_128(); % Saved 128-by-128 baseline.
+% parameters=reconstruction_parameters_256(); % Independent 256-by-256 copy to tune.
+% Put one-run changes to parameters HERE, before the assignments below.
+if ~isempty(parameters)
+    pixel_stride=parameters.pixel_stride;
+    lower_bounds=parameters.lower_bounds(1:2); upper_bounds=parameters.upper_bounds(1:2);
+    L=parameters.L; r=parameters.r; repetition_time_ms=parameters.TR_ms;
+    noise_std=parameters.noise_std;
+    T1set=parameters.blip_options.T1Grid; T2set=parameters.blip_options.T2Grid;
+    rng(parameters.seed);
+end
 
 %% 2. Ground truth and pulse sequence
 maps = load(input_file, 'T1', 'T2', 'Density');

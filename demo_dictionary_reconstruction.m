@@ -24,6 +24,10 @@ input_file = fullfile(project_root, 'data', 'PWbrain256.mat');
 image_variable = 'T1';        % Name of the image array saved inside your MAT file.
 % DOWNSAMPLING a 256-by-256 input: 1 -> 256-by-256, 2 -> 128-by-128, 4 -> 64-by-64.
 pixel_stride = 1;             % Keep every pixel_stride-th row/column; no interpolation.
+% To use only the resolution from a saved qMRI preset, uncomment BOTH lines:
+% parameters=reconstruction_parameters_128(); % Or reconstruction_parameters_256().
+% pixel_stride=parameters.pixel_stride;
+% qMRI acquisition/solver settings do not apply to this image-denoising problem.
 % Optional direct division is shown after loading the image below.
 image_scale = 5000;           % Typical image amplitude, used only for numerical scaling.
 noise_std = 150;              % Noise amplitude in the same units as your image.

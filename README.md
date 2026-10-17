@@ -20,7 +20,7 @@ The current implementation is best used at **128 x 128 pixels**, which is the re
 
 1. Download or clone this repository and open its root folder in MATLAB.
 2. Open [`demo_compare_all_reconstructions.m`](demo_compare_all_reconstructions.m).
-3. The script currently defaults to the full 256 x 256 input (`pixel_stride = 1`). For a faster first run, set `pixel_stride = 2` to reconstruct at 128 x 128 pixels. Review the input, algorithm, and plotting settings at the top of the script.
+3. The script loads the saved **128 x 128 baseline** by default (`pixel_stride = 2` on a 256 x 256 source). Select `reconstruction_parameters_256()` in its parameter section for full resolution. Review the input and plotting settings in the demo and the algorithm settings in the selected preset file.
 4. Run the script from the MATLAB Command Window:
 
 ```matlab
@@ -55,6 +55,26 @@ s.design.ShowFigures = false;
 This replaces any compact PDFs with the same filenames; the saved `results.mat` and four existing reports are unchanged. Missing compact-layout settings in older runs use the defaults.
 
 For the supplied input, `pixel_stride = 1` uses the full 256 x 256 resolution; this requires substantially more computation. The undersampling factor `r` must divide the reconstructed image's row count.
+
+## Saved parameter sets
+
+Two editable MATLAB functions store the acquisition settings, physical bounds/scales, BLIP grids and initialization options, and the BLIP, LM, one-step DL and nested DL solver options:
+
+- [`reconstruction_parameters_128.m`](reconstruction_parameters_128.m): the current four-method comparison settings, saved as the 128 x 128 baseline.
+- [`reconstruction_parameters_256.m`](reconstruction_parameters_256.m): an independent copy with `pixel_stride = 1`. All other values currently match the baseline; this is a starting point for later tuning, not a tuned 256 x 256 configuration.
+
+Load either set as a MATLAB structure:
+
+```matlab
+parameters = reconstruction_parameters_128();
+% parameters = reconstruction_parameters_256();
+```
+
+In `demo_compare_all_reconstructions.m`, select the desired function in **Load saved experiment and algorithm parameters**. Edit the selected preset file to save changes for future runs; the other file is independent. For a temporary change, add an assignment such as `parameters.lm_options.MaxIterations = 20` immediately after loading, before the demo copies the fields into its working variables. Change dependent settings such as bounds, grid spacing or `r` in the preset file so the derived grids, BLIP step sizes and LM damping are rebuilt together.
+
+The standalone LM, nested DL and two-method DL comparison demos have an **Optional saved qMRI parameters** section after their manual settings. Leave `parameters = []` to keep their existing defaults, or uncomment one preset-loading line. The two-method comparison uses `nested_options` for both methods and changes only `InnerStopRule`; use the four-method comparison to test independently configured one-step and nested options. The legacy BLIP demo can load the acquisition and dictionary grid, but retains its own fixed 20-trial budget and support-mask behavior. The image-denoising demo shows how to reuse only `pixel_stride`, since qMRI solver parameters do not apply to that problem.
+
+The preset sizes assume a **256 x 256 source image**. Input-file selection, artificial-phantom generation and plotting stay in each demo; standalone demos also retain their own initialization. Loading a preset in the Command Window alone does not configure a demo because demos start with `clearvars`: select it inside the script. The four-method demo continues to save the actual experiment settings and solver options in `results.mat`.
 
 ## Expected runtime
 
@@ -98,7 +118,7 @@ Run any of these scripts from the MATLAB Editor or enter its name without `.m` i
 
 | Script | Purpose and initialization | Default image size |
 | --- | --- | --- |
-| [`demo_compare_all_reconstructions.m`](demo_compare_all_reconstructions.m) | Compare BLIP, projected LM, one-step DL and nested DL using one simulated data set and one common coarse-BLIP start. Saves numerical results and comparison reports. | 256 x 256 |
+| [`demo_compare_all_reconstructions.m`](demo_compare_all_reconstructions.m) | Compare BLIP, projected LM, one-step DL and nested DL using one simulated data set and one common coarse-BLIP start. Saves numerical results and comparison reports. | 128 x 128 |
 | [`demo_compare_dictionary_reconstruction.m`](demo_compare_dictionary_reconstruction.m) | Compare one-step and nested DL using the same measurements, uniform foreground start, and initial dictionaries/coefficients. Only the inner dictionary stopping rule differs. | 128 x 128 |
 | [`demo_nested_dictionary_reconstruction.m`](demo_nested_dictionary_reconstruction.m) | Run dictionary-regularized qMRI reconstruction from a uniform foreground start. Refines dictionaries/coefficients to an inner tolerance before each map update. | 128 x 128 |
 | [`demo_dictionary_reconstruction.m`](demo_dictionary_reconstruction.m) | Denoise a single image (`T1` by default) using overlapping patches. Runs a fixed number of dictionary updates, then continues from that result to a tolerance. Does not simulate Fourier measurements or solve the qMRI inverse problem. | 256 x 256 |
@@ -107,19 +127,21 @@ Run any of these scripts from the MATLAB Editor or enter its name without `.m` i
 
 For comparisons between reconstruction methods, use `demo_compare_all_reconstructions`: the standalone demos have different acquisition, noise and initialization settings, so their default results are not directly comparable. The four-method demo uses `blip_reconstruction.m`, which provides explicit bounds, stopping options and iteration histories; the standalone BLIP demo uses the legacy interface. One-step DL is available in both comparison scripts.
 
-The LM defaults also differ: the four-method comparison uses initial damping `r^2`, decay `0.15` and at most 15 iterations; the standalone LM demo uses initial damping `1`, decay `0.6` and at most 14 iterations for its uniform start. Both currently disable discrepancy stopping. These are experiment settings, not universal parameter choices; edit the LM options in the selected script.
+The LM defaults also differ: the four-method comparison uses initial damping `r^2`, decay `0.15` and at most 15 iterations; the standalone LM demo uses initial damping `1`, decay `0.6` and at most 14 iterations for its uniform start. Both currently disable discrepancy stopping. These are experiment settings, not universal parameter choices; edit the selected preset's `lm_options`, or the standalone script's manual settings when preset loading is disabled.
 
 The two qMRI dictionary-learning demos and the four-method comparison require Optimization Toolbox. The standalone image-denoising, LM and BLIP demos do not require that toolbox.
 
 ## Input data and outputs
 
-The qMRI reconstruction demos use `data/PWbrain256.mat` for reference parameter maps and `data/sequence_parameter_middle.mat` for the RF pulse sequence. Measurements are simulated from these inputs. The image-denoising demo loads only the selected image variable and adds noise directly to the image; it does not use the RF sequence.
+The qMRI reconstruction demos use `data/sequence_parameter_middle.mat` for the RF pulse sequence. The four-method comparison currently generates artificial 256 x 256 reference maps and subsamples them according to the selected preset; its input section also offers `data/PWbrain256.mat`, which is the standalone demos' default. Measurements are simulated from the selected maps. The image-denoising demo loads only the selected image variable and adds noise directly to the image; it does not use the RF sequence.
 
 To use your own reference maps in a qMRI demo, set `input_file` to a MAT file containing equally sized, finite, two-dimensional arrays named `T1`, `T2`, and `Density`. Relaxation times are in milliseconds; density must be nonnegative, with zero marking the background. Review the physical bounds, scaling, and sampling settings for the new input. For image denoising, supply just one real, finite, two-dimensional numeric array and set `image_variable` to its name; adjust `image_scale` and `noise_std` to its units. The demos also include an optional very simple artificial-phantom generator.
 
 The demos leave reconstructed maps and available iteration histories in the MATLAB workspace. Only the four-method comparison automatically saves `results.mat`, including errors, residuals, timings, stopping reasons and experiment settings. Save workspace variables explicitly if numerical results from the other demos are needed later.
 
 The other demos use the same plot style: shared map/error color limits, linked zoom insets, compact PDF rows, and profile reports. They export to a new time-stamped folder under `data/demo_reports/`. Edit each demo's `design` settings to choose the zoom, profile row, background display, or figure visibility; the common defaults are in `reconstruction_plot_design.m`. Convergence PDFs retain each method's own diagnostics. The denoising demo exports a single image channel, while legacy BLIP omits initialization and convergence reports because its interface does not return those quantities.
+
+PDF export normally uses vector graphics. If MATLAB's vector renderer fails, `export_reconstruction_pdf.m` retries on a fresh hidden figure, then falls back to an image page at `design.Resolution` DPI with a warning if necessary; existing PDF pages are preserved when an export fails.
 
 ## Reference
 

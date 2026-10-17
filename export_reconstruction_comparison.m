@@ -140,10 +140,6 @@ function zoom_box = export_reconstruction_comparison(truth,reconstructions,mask,
     annotation(fig,'textbox',[.045 .006 .94 .03],'String',caption, ... % Place the footer in a textbox along the bottom of the page.
         'EdgeColor','none','FontName',design.FontName,'FontSize',design.FontSize-1, ... % Remove its border and use the configured font with a slightly smaller size.
         'Interpreter','none','VerticalAlignment','middle','HorizontalAlignment','center'); % Render literal text and center the footer within its textbox.
-    % Finish graphics layout before exporting; APPEND preserves earlier PDF pages.
-    drawnow; % Wait for the graphics layout to finish before exporting.
-    exportgraphics(fig,path,'ContentType','vector','BackgroundColor','white', ... % WRITE THE PDF HERE: export the portrait figure to the caller's path.
-        'Resolution',design.Resolution,'Append',append); % Use the configured resolution and either append a page or replace the PDF.
-    % Hidden figures have served their purpose once the PDF has been written.
-    if ~design.ShowFigures, close(fig); end % Close hidden figures after export; retain visible figures for inspection.
+    % The shared exporter protects preceding pages and closes hidden figures.
+    export_reconstruction_pdf(fig,path,design,append);
 end

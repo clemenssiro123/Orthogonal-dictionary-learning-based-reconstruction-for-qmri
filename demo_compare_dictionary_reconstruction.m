@@ -2,6 +2,7 @@
 % Run in MATLAB R2021b + Optimization Toolbox. Optional artificial maps are saved below.
 % Both methods use the same measurements, initial maps, D0/C0, objective,
 % map solver and outer stopping tolerances. Only the inner update rule differs.
+% Optional saved 128/256 presets: see the selector after section 1 below.
 % Workflow: synthesize data -> create one common u0/D0/C0 -> run both rules
 % through nested_dictionary_reconstruction -> compare final maps and histories.
 % Clear previous variables/figures, then seed random noise for reproducible runs.
@@ -35,16 +36,6 @@ initial_values=[2000 200 50]; % Uniform foreground start, inside all three bound
 % If you divide a map below, adjust its bounds, scales, reference_times
 % and initial_values manually; these settings are not changed automatically.
 
-%% Plot design: same defaults as demo_compare_all_reconstructions
-% These options affect display copies and PDF exports only.
-design=reconstruction_plot_design(lower_bounds,upper_bounds,[4 3]);
-design.ShowFigures=true; design.ShowRowFigures=false;
-design.ZeroBackground=true; design.RowShowTitles=false;
-design.ProfileRow=[]; % [] chooses the middle row.
-design.ZoomBox=[]; % [first_row last_row first_col last_col]; [] selects a body region.
-% MapLimits, ErrorLimits, MapColors, ErrorColors and sizes are editable in design.
-output_folder=fullfile(root,'data','demo_reports',['comparison_dictionary_' datestr(now,'yyyymmdd_HHMMSS')]);
-
 %% 1. Shared acquisition and solver settings
 L=100; r=8; TR_ms=12;         % r must divide the reduced row count; r=1 works for any size.
 noise_std=.8;                % Standard deviation of each real/imaginary noise component.
@@ -64,6 +55,37 @@ qp_optimality_tolerance=1e-8;
 % Separate the QP's stationarity test, objective-change test and inner PCG accuracy.
 qp_function_tolerance=0;
 qp_pcg_tolerance=1e-6;
+
+%% Optional saved qMRI parameters
+% [] keeps this demo's manual settings above. Uncomment ONE preset to load it.
+% Presets assume a 256-by-256 input; they override acquisition, bounds/scales
+% and solver settings. The input file and uniform initialization stay as above.
+parameters=[];
+% parameters=reconstruction_parameters_128(); % Saved 128-by-128 baseline.
+% parameters=reconstruction_parameters_256(); % Independent 256-by-256 copy to tune.
+% Put one-run changes to parameters HERE, before the assignments below.
+if ~isempty(parameters)
+    pixel_stride=parameters.pixel_stride;
+    lower_bounds=parameters.lower_bounds; upper_bounds=parameters.upper_bounds;
+    reference_times=parameters.reference_times; scales=parameters.scales;
+    L=parameters.L; r=parameters.r; TR_ms=parameters.TR_ms;
+    noise_std=parameters.noise_std;
+    rng(parameters.seed);
+    % This controlled two-method demo uses nested_options for BOTH methods;
+    % only InnerStopRule differs. Use the four-method demo for separate options.
+    patch_size=parameters.nested_options.PatchSize;
+    beta=parameters.nested_options.Beta;
+end
+
+%% Plot design: same defaults as demo_compare_all_reconstructions
+% These options affect display copies and PDF exports only.
+design=reconstruction_plot_design(lower_bounds,upper_bounds,[4 3]);
+design.ShowFigures=true; design.ShowRowFigures=false;
+design.ZeroBackground=true; design.RowShowTitles=false;
+design.ProfileRow=[]; % [] chooses the middle row.
+design.ZoomBox=[]; % [first_row last_row first_col last_col]; [] selects a body region.
+% MapLimits, ErrorLimits, MapColors, ErrorColors and sizes are editable in design.
+output_folder=fullfile(root,'data','demo_reports',['comparison_dictionary_' datestr(now,'yyyymmdd_HHMMSS')]);
 
 %% 2. Generate one common data set
 % Load physical reference maps. Positive background T1/T2 values keep the
@@ -145,6 +167,13 @@ options=struct('Scales',scales,'ReferenceTimes',reference_times,'H',1, ...
     'QPFunctionTolerance',qp_function_tolerance,'QPPCGTolerance',qp_pcg_tolerance, ...
     'QPRequireOptimality',true,'QPMaxIterations',300,'Verbose',true, ...
     'MonitorFcn',@(u) relative_body_error(u,truth,mask));
+if ~isempty(parameters)
+    % Copy all saved solver controls; retain the runtime maps/mask above.
+    for field=fieldnames(parameters.nested_options).'
+        name=field{1}; options.(name)=parameters.nested_options.(name);
+    end
+    options.H=parameters.h;
+end
 rules={'tolerance','one-step'}; method_names={'Nested DL','One-step DL'};
 % Both calls receive identical initial arrays. MATLAB passes them by value,
 % so learning in the first call cannot alter the second call's starting D/C.
@@ -153,7 +182,7 @@ for method=1:2
     options.InnerStopRule=rules{method};
     % Switch only how far dictionary learning runs inside each outer map update.
     fprintf('\n%s: %dx%d, L=%d, r=%d, %s GN, %s step norm\n', ...
-        method_names{method},n,m,L,r,gauss_newton,step_norm);
+        method_names{method},n,m,L,r,options.GaussNewton,options.StepNorm);
     [reconstructions{method},dictionaries{method},coefficients{method},histories{method}]= ...
         nested_dictionary_reconstruction(data,RF,TR,r,zeta,u0,options);
     state=histories{method};

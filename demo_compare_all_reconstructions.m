@@ -1,5 +1,5 @@
 %% Compare BLIP, projected LM, one-step DL and nested DL (MATLAB R2021b)
-% Edit the input section and sections 1-3, then Run. Requires Optimization Toolbox for DL.
+% Choose the input and saved parameter preset below, then Run. Requires Optimization Toolbox for DL.
 % All four methods receive the SAME measurements and coarse-BLIP initial maps.
 % T1/T2 use milliseconds; optional input rescaling changes the simulated phantom.
 % Four reports, eight compact PDFs and results.mat are written to a new run folder in data.
@@ -14,96 +14,47 @@ root=fileparts(mfilename('fullpath'));
 % Resolve the helper folders relative to this script, independent of the current folder.
 addpath(fullfile(root,'helper_functions'),fullfile(root,'bloch_simulations'));
 
-%% Input: change the file and physical ranges here
+%% Input: choose reference maps here; physical ranges are in the parameter preset
 % Supply a MAT file with equally sized 2-D arrays T1, T2 and Density.
 % T1/T2 are in milliseconds; Density is nonnegative, with zero outside the body.
 % To prepare your own file: save('my_maps.mat','T1','T2','Density').
 % These maps are ground truth for SIMULATED measurements, not measured k-space.
-input_file=fullfile(root,'data','PWbrain256.mat'); % Or the full path to your MAT file.
-% OPTIONAL artificial input: uncomment ALL THREE lines below to use it.
+%input_file=fullfile(root,'data','PWbrain256.mat'); % Or the full path to your MAT file.
+% Artificial input (current default): comment ALL THREE lines to use PWbrain256 above.
 % Higher complexity adds more/smaller regions and finer texture. The MAT file is regenerated each run.
-% [T1,T2,Density]=create_artificial_ground_truth(10,256); % Complexity, image size.
-% input_file=fullfile(root,'data','artificial_maps.mat');
-% save(input_file,'T1','T2','Density');
-% DOWNSAMPLING a 256-by-256 input: 1 -> 256-by-256, 2 -> 128-by-128, 4 -> 64-by-64.
-pixel_stride=1;             % Keep every pixel_stride-th row/column; no interpolation.
-% Optional direct division is shown after loading the maps below.
-% Bounds are physical [T1(ms), T2(ms), Density], chosen for your input maps.
-% Keep time lower bounds positive and density lower bound zero.
-lower_bounds=[100 10 0]; upper_bounds=[5500 600 110];
-reference_times=[1000 100];  % Choose positive background times inside these bounds.
-scales=[5000 500 100];       % Numerical scales in the SAME units; not intensity limits.
-% Coordinate rule: x=(u-[reference_times,0])./scales. Changing scales changes
-% the dictionary/spatial prior, so review Alpha/Lambda/Beta when changing units.
-% If you divide a map below, adjust its bounds, scales and reference_times manually.
-% Also review the BLIP grid spacing below for the new range.
+[T1,T2,Density]=create_artificial_ground_truth(10,256); % Complexity, image size.
+input_file=fullfile(root,'data','artificial_maps.mat');
+save(input_file,'T1','T2','Density');
 
-%% 1. Shared experiment and coarse-grid BLIP initialization
-L=100; r=16; TR_ms=12;       % r must divide the reduced row count; r=1 works for any size.
-noise_std=1.0; seed=1;       % Standard deviation of EACH real/imaginary component.
-h=1;
-initial_use_body_mask=true; % Legacy initialization: zero density outside body.
-                           % The mask is NOT a constraint in any subsequent solve.
-coarse_spacing=[200 50];    % [T1 T2] grid spacing in ms; smaller costs more memory/time.
-fine_spacing=[100 10];      % The reconstruction dictionary uses this finer spacing.
-% Both grids follow the bounds above, including the upper endpoints and reference times.
-coarse_T1=unique([lower_bounds(1):coarse_spacing(1):upper_bounds(1) upper_bounds(1) reference_times(1)]);
-coarse_T2=unique([lower_bounds(2):coarse_spacing(2):upper_bounds(2) upper_bounds(2) reference_times(2)]);
-initial_options=struct('T1Grid',coarse_T1,'T2Grid',coarse_T2, ...
-    'MaxIterations',20,'MaxTrials',20,'InitialStep',r,'Kappa',.99, ...
-    'MaxBacktracking',30,'BacktrackingFactor',2,'BatchSize',512, ...
-    'StepTolerance',0,'Verbose',false);
-% The legacy initializer spends 20 TRIALS, including rejected trials.
-% Its grid is now in physical milliseconds and is freely adjustable above.
-
-%% 2. Separate algorithm settings (shared coordinates/bounds are added below)
-% BLIP: a finer Bloch dictionary. Including the coarse grid makes the common
-% nonzero initial signals members of this dictionary as well.
-blip_options=struct('T1Grid',unique([lower_bounds(1):fine_spacing(1):upper_bounds(1) coarse_T1]), ...
-    'T2Grid',unique([lower_bounds(2):fine_spacing(2):upper_bounds(2) coarse_T2]), ...
-    'MaxIterations',30,'MaxTrials',Inf,'InitialStep',r,'Kappa',.99, ...
-    'MaxBacktracking',30,'BacktrackingFactor',2,'BatchSize',512, ...
-    'StepTolerance',0,'NoiseLevel',[],'DiscrepancyFactor',1.1,'Verbose',true);
-
-% LM: physical L2 damping, no spatial or dictionary regularization.
-% GaussNewton chooses local Gram curvature or exact sampled FFT products.
-% Tolerance tests map stationarity; LinearTolerance tests the normal equations.
-% InitialDamping/DampingDecay/MinDamping define the geometric damping schedule.
-% InitialDamping=r^2 follows Dong et al. (2019), sec. 4.4 (their s equals r).
-% Decay and iteration budget are the settings checked for this implementation.
-lm_options=struct('MaxIterations',15,'GaussNewton','approximate', ...
-    'InitialDamping',r^2,'DampingDecay',.15,'MinDamping',1e-8, ...
-    'ResidualDampingWeight',1e-15,'LinearTolerance',1e-8, ...
-    'LinearMaxIterations',500,'Tolerance',1e-6,'StepTolerance',0, ...
-    'NoiseLevel',[],'DiscrepancyFactor',1.1,'Verbose',true);
-% NoiseLevel=[] uses the fixed iteration budget above. To use
-% discrepancy stopping instead, set the noise norm after data generation.
-
-% One-step DL: exactly one D/C update pair per map and outer iteration.
-% Alpha weights spatial gradients; Lambda weights each map's patch fit;
-% Lambda.*Beta weights coefficient sparsity. LambdaD/LambdaC control the
-% proximal D/C updates. MapTolerance AND DictionaryTolerance must be met
-% to stop for a small outer change. QP tolerances control each map subproblem.
-one_options=struct( ...
-    'MaxIterations',80,'Alpha',0.5, 'Lambda',[6.75 37.5 37.5]*1.1,'Beta',[.009 .009 .009]*1.5,...
-    'PatchSize',[8 8],'StepNorm','H01','GaussNewton','approximate', ...
-    'InnerStopRule','one-step','LambdaD',1,'LambdaC',1, ...
-    'MapTolerance',1e-6,'DictionaryTolerance',1e-4, ...
-    'InitialDamping',1,'MinDamping',1e-9,'MaxBacktracking',20, ...
-    'QPOptimalityTolerance',1e-7,'QPFunctionTolerance',0, ...
-    'QPPCGTolerance',1e-6,'QPRequireOptimality',true,'QPMaxIterations',600, ...
-    'Verbose', true);
-
-% Nested DL: start with the same settings; override any field independently.
-% Same PatchSize/Beta gives the same deterministic D0/C0 from the common u0.
-nested_options=one_options;
-% Copying the structure preserves all shared choices; following assignments
-% override only the amount and accuracy of dictionary learning per outer step.
-nested_options.InnerStopRule='tolerance';
-nested_options.InnerMaxIterations=1000;
-nested_options.InnerToleranceScale=.006;
-nested_options.InnerDecay=.75; % eta_k=scale*||(D0,C0)||/(k+1)^gamma; gamma>1/2.
-% nested_options.Lambda=[4.5 45 45]*3.5; % Example of a separate method setting.
+%% 1-2. Load saved experiment and algorithm parameters
+% Choose ONE preset here. Edit its .m file to save changes for future runs.
+% The 256 preset currently copies the 128 settings, with pixel_stride=1.
+% It can be tuned independently without changing the 128 baseline.
+parameters=reconstruction_parameters_128(); % Default: 128-by-128 from a 256 input.
+% parameters=reconstruction_parameters_256(); % Uncomment to use full resolution.
+% Optional one-run overrides go HERE, before the assignments below, e.g.:
+% parameters.lm_options.MaxIterations=20;
+% Bounds/scales/reference times and BLIP grids are configured in the preset.
+% Changing map units requires matching changes to those settings and DL weights.
+pixel_stride=parameters.pixel_stride;
+lower_bounds=parameters.lower_bounds;
+upper_bounds=parameters.upper_bounds;
+reference_times=parameters.reference_times;
+scales=parameters.scales;
+L=parameters.L;
+r=parameters.r;
+TR_ms=parameters.TR_ms;
+noise_std=parameters.noise_std;
+seed=parameters.seed;
+h=parameters.h;
+initial_use_body_mask=parameters.initial_use_body_mask;
+coarse_T1=parameters.coarse_T1;
+coarse_T2=parameters.coarse_T2;
+initial_options=parameters.initial_options;
+blip_options=parameters.blip_options;
+lm_options=parameters.lm_options;
+one_options=parameters.one_options;
+nested_options=parameters.nested_options;
 
 %% 3. Plot design: shared color limits make the maps visually comparable
 % These settings affect rendering, not reconstruction or numerical errors.
@@ -517,14 +468,7 @@ function draw_curve(x,y,method,design) % Draw a convergence/profile curve using 
 end
 
 function export_pdf(fig,path,design,append) % Write one existing report page to path, optionally appending it to earlier pages.
-    % Hide interactive controls, finish pending graphics updates, then write a page.
-    axes_list=findall(fig,'Type','axes'); % Find every axes belonging to this figure.
-    for ax=axes_list.' % Visit each axes handle to prepare the figure for export.
-        if ~isempty(ax.Toolbar), ax.Toolbar.Visible='off'; end % Exclude hover controls. % This keeps interactive toolbar buttons out of the PDF page.
-    end
-    drawnow; % Finish pending drawing and layout before writing the file.
-    % append=false starts the PDF; append=true adds the next page to it.
-    exportgraphics(fig,path,'ContentType','vector','BackgroundColor','white', ... % WRITE THE PDF HERE: save this existing report figure at the supplied filename.
-        'Resolution',design.Resolution,'Append',append); % Apply the export resolution; append=true preserves earlier pages in this PDF.
-    if ~design.ShowFigures, close(fig); end % Release hidden report figures after writing; keep visible windows open.
+    % Shared exporter retries MATLAB vector-renderer failures and protects
+    % preceding pages when appending to an existing report.
+    export_reconstruction_pdf(fig,path,design,append);
 end

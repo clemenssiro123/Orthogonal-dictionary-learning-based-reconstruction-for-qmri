@@ -128,7 +128,6 @@ function compact_row(values,headings,limits,colors,labels,shared_bar,rows,cols,d
         'Position',[40 40 width height],'DefaultAxesFontName',design.FontName, ... % Set its screen position, computed page size and axes font family.
         'DefaultAxesFontSize',design.FontSize,'DefaultTextFontName',design.FontName, ... % Apply the configured axes font size and text font family.
         'DefaultTextFontSize',design.FontSize); % Apply the configured text font size to new text objects.
-    if ~show_figures, cleanup=onCleanup(@() close(fig)); end % Automatically close a hidden figure on return or error; retain explicitly requested visible figures.
     % A white frame fixes a small page margin when exportgraphics crops content.
     annotation(fig,'rectangle',[.001 .001 .998 .998],'Color','w','LineWidth',.1); % Keep a nearly full-page white frame so PDF cropping preserves the small margin.
     for column=1:columns % Draw every panel from left to right.
@@ -155,7 +154,7 @@ function compact_row(values,headings,limits,colors,labels,shared_bar,rows,cols,d
             ax.Position=pos; % Undo any axes shrinking caused by colorbar creation to preserve equal map sizes.
         end
     end
-    drawnow; % Complete pending graphics layout before exporting the figure.
-    exportgraphics(fig,path,'ContentType','vector','BackgroundColor','white', ... % WRITE THE PDF HERE: export this figure to path with vector graphics and a white background.
-        'Resolution',design.Resolution); % Supply the configured raster resolution where applicable; text/lines remain vector graphics.
+    % Respect the row-figure switch when the shared exporter closes figures.
+    row_design=design; row_design.ShowFigures=show_figures;
+    export_reconstruction_pdf(fig,path,row_design);
 end
