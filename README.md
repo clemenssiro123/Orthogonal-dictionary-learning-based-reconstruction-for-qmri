@@ -70,7 +70,49 @@ parameters = reconstruction_parameters_128();
 % parameters = reconstruction_parameters_256();
 ```
 
-In `demo_compare_all_reconstructions.m`, select the desired function in **Load saved experiment and algorithm parameters**. Edit the selected preset file to save changes for future runs; the other file is independent. For a temporary change, add an assignment such as `parameters.lm_options.MaxIterations = 20` immediately after loading, before the demo copies the fields into its working variables. Change dependent settings such as bounds, grid spacing or `r` in the preset file so the derived grids, BLIP step sizes and LM damping are rebuilt together.
+In `demo_compare_all_reconstructions.m`, select the desired function in **Load saved experiment and algorithm parameters**. These functions return a plain MATLAB structure without running a reconstruction or changing files. Keeping configuration in small `.m` functions makes the values readable, records edits in Git, and allows derived quantities such as dictionary grids and initial damping to be computed from the same settings.
+
+### Changing parameters
+
+**To save a new default, edit the values inside the selected preset function.** For example, to tune the 256 x 256 configuration:
+
+1. Open `reconstruction_parameters_256.m` in the MATLAB Editor (`edit reconstruction_parameters_256`).
+2. Change acquisition variables such as `r` or `noise_std`, or values in the relevant options structure. For example, change `'MaxIterations',15` to `'MaxIterations',20` inside `lm_options=struct(...)` to increase the LM budget. This is an editing example, not a recommendation to use 20 iterations.
+3. Save the file. The final `parameters=struct();` block only collects the settings for return; normally leave that block unchanged.
+4. Select `parameters=reconstruction_parameters_256();` in the demo and run it. The 128 x 128 preset remains unchanged.
+
+Within each preset, `nested_options=one_options` copies the one-step DL settings before adding the nested-specific controls. Editing the original `one_options` definition therefore changes both methods' shared settings. To change only nested DL, edit or add a `nested_options.<field>=...` assignment after that copy and before the final return block. To change only one-step DL, place its override after the copy as well.
+
+**For a temporary experiment, override the returned structure in the demo.** Place overrides immediately after the preset-loading line and before the demo copies its fields into working variables:
+
+```matlab
+parameters = reconstruction_parameters_256();
+parameters.lm_options.MaxIterations = 20;       % Example one-run override.
+parameters.nested_options.InnerMaxIterations = 1500;
+```
+
+These assignments leave the preset file unchanged and apply on every run until removed from the demo. After loading, `parameters.one_options` and `parameters.nested_options` are independent copies; change both explicitly if an override should affect both. Change dependent settings such as bounds, grid spacing or `r` inside the preset function so the grids, BLIP step sizes and LM damping are rebuilt together. Assigning `parameters.r` after loading does not recompute those derived values.
+
+### Current choices and their roles
+
+The 128 x 128 preset records the current experiment configuration. Its weights, iteration budgets and tolerances are practical choices for this setup; they are not claimed to be optimal for other inputs, noise levels or resolutions. The 256 x 256 preset is an editable starting copy and still needs its own evaluation.
+
+| Setting in the preset | Current value | Purpose and effect of changing it |
+| --- | --- | --- |
+| `L`, `r`, `TR_ms`, `noise_std`, `seed` | `100`, `16`, `12`, `1`, `1` | Define the common simulated acquisition. Noise SD applies separately to real and imaginary parts. The seed fixes the random draw for a given setup. |
+| `lower_bounds`, `upper_bounds`, `scales`, `reference_times` | `[100 10 0]`, `[5500 600 110]`, `[5000 500 100]`, `[1000 100]` | Define the admissible physical maps and shifted, scaled optimization coordinates. Time values are in ms. Changing scales also changes the DL prior in physical units, so review its weights. |
+| `coarse_spacing`, `initial_options` | `[200 50]` ms; at most 20 trials | Build a common coarse-BLIP start at lower dictionary cost. Rejected backtracking trials count toward this initialization budget. |
+| `fine_spacing`, `blip_options.MaxIterations` | `[100 10]` ms; 30 accepted updates | Refine the BLIP time grid and allow further reconstruction updates. Smaller spacing increases dictionary size and matching cost. The coarse grid is included in the fine dictionary. |
+| `lm_options` damping and budget | `InitialDamping=r^2`, `DampingDecay=0.15`, `MinDamping=1e-8`, `MaxIterations=15` | Control stabilization and the number of projected LM updates. A smaller decay reduces damping faster; more updates can improve the data fit but also fit more noise. |
+| DL `Alpha`, `Lambda`, `Beta`, `PatchSize` | `0.7`, `[10.75 37.5 37.5]*1.5`, `[.009 .009 .009]*1.5`, `[8 8]` | Weight spatial smoothness, patch fit and coefficient sparsity on the scaled maps. The coefficient penalty uses `Lambda.*Beta`; all three-component vectors follow `[T1 T2 Density]`. |
+| DL `MaxIterations`, `InnerStopRule` | 100 outer updates; `'one-step'` or `'tolerance'` | Set the outer budget and amount of dictionary learning between map updates. The baseline shares the prior weights across both DL methods. |
+| `nested_options.InnerMaxIterations`, `InnerToleranceScale`, `InnerDecay` | `1000`, `0.005`, `0.75` | Cap inner dictionary updates and set their decreasing change tolerance. A smaller scale requests a tighter inner solve, potentially increasing cost or reaching the cap. |
+
+The LM choice `InitialDamping=r^2` follows the numerical choice in [Dong et al., Section 4.4](https://arxiv.org/pdf/1903.11979), where their undersampling factor `s` corresponds to this code's `r`. The decay `0.15` and 15-update budget are settings for this implementation, not values prescribed by that paper. LM has no spatial or dictionary penalty in this comparison.
+
+`NoiseLevel=[]` disables discrepancy stopping for BLIP and LM. To try it in the four-method demo, uncomment the `lm_options.NoiseLevel=expected_noise_norm` and/or `blip_options.NoiseLevel=expected_noise_norm` lines after data generation. `NoiseLevel` is a noise **norm**, not `noise_std`; `DiscrepancyFactor` sets the residual threshold multiplier. Iteration limits are caps, and the saved `stop_reason` records the actual termination. LM's `Tolerance` tests its projected-gradient measure, while DL's `MapTolerance` and `DictionaryTolerance` test outer changes; `QPOptimalityTolerance` concerns a map subproblem. Meeting a step tolerance alone does not quantify closeness to stationarity without the constants in the corresponding bounds.
+
+### Loading presets in other demos
 
 The standalone LM, nested DL and two-method DL comparison demos have an **Optional saved qMRI parameters** section after their manual settings. Leave `parameters = []` to keep their existing defaults, or uncomment one preset-loading line. The two-method comparison uses `nested_options` for both methods and changes only `InnerStopRule`; use the four-method comparison to test independently configured one-step and nested options. The legacy BLIP demo can load the acquisition and dictionary grid, but retains its own fixed 20-trial budget and support-mask behavior. The image-denoising demo shows how to reuse only `pixel_stride`, since qMRI solver parameters do not apply to that problem.
 
