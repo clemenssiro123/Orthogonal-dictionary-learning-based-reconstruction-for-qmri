@@ -16,6 +16,7 @@ function zoom_box = export_reconstruction_comparison(truth,reconstructions,mask,
 % Returns the actual ZoomBox used so automatic selections can be reproduced.
 % TRUTH and each cell of RECONSTRUCTIONS have size N-by-M-by-3, with
 % channels [T1,T2,rho] in physical units. MASK is an N-by-M logical body mask.
+% N-by-M single-image inputs are also supported, with one map/error row pair.
 % DESIGN controls presentation; PATH is the destination PDF filename.
 % All columns use the same crop and each row uses the same color scale,
 % so differences between methods remain directly comparable.
@@ -34,7 +35,7 @@ function zoom_box = export_reconstruction_comparison(truth,reconstructions,mask,
     [n,m,channels]=size(truth); % Read the reference image height, width and number of parameter channels.
     % assert stops with an explanatory message if a required condition fails.
     % These checks prevent misleading comparisons of differently sized maps.
-    assert(channels==3 && n>=2 && m>=2,'Truth must contain three 2-D parameter maps.'); % Require three parameter maps with at least two rows and columns.
+    assert(any(channels==[1 3]) && n>=2 && m>=2,'Truth must contain one image or three parameter maps.');
     assert(isequal(size(mask),[n m]),'Mask and parameter maps must have the same size.'); % Require a mask with the same two-dimensional image size.
     assert(numel(reconstructions)==numel(method_names) && ~isempty(reconstructions), ... % Require nonempty reconstruction data and one method name per result.
         'Provide one name per reconstruction.'); % Explain a mismatch between results and their names.
@@ -74,18 +75,18 @@ function zoom_box = export_reconstruction_comparison(truth,reconstructions,mask,
     % beside the shared colorbars. Compute in pixels to preserve the layout.
     %% 4. Compute a uniform six-row layout with space for labels and colorbars
     position=get(fig,'Position'); width=position(3); height=position(4); % Read the actual figure dimensions used for layout calculations.
-    columns=numel(shown); gap_x=18; gap_y=16; group_gap=12; % Count columns and set pixel gaps between columns, rows and parameter groups.
+    columns=numel(shown); row_count=2*channels; gap_x=18; gap_y=16; group_gap=12;
     left=65; right=72; top=49; bottom=53; % Reserve outer space for row labels, headings, colorbars and the footer.
     % Fit square panel positions into both available width and available height.
     % The extra group gaps separate the T1, T2 and density row pairs.
     side=min((width-left-right-(columns-1)*gap_x)/columns, ... % Calculate the largest square panel side allowed by the available page width.
-        (height-top-bottom-5*gap_y-2*group_gap)/6); % Also constrain the side to fit all six rows and their vertical gaps.
+        (height-top-bottom-(row_count-1)*gap_y-(channels-1)*group_gap)/row_count);
     assert(side>0,'ComparisonFigureSize is too small for the comparison grid.'); % Reject a figure size that leaves no room for the map grid.
     % Center the complete grid horizontally within the reserved margins.
     left=left+(width-left-right-columns*side-(columns-1)*gap_x)/2; % Center the complete grid horizontally inside the reserved margins.
 
     %% 5. Draw maps, absolute errors and identical zoom windows
-    for row=1:6 % Draw the six rows: T1 map/error, T2 map/error, and density map/error.
+    for row=1:row_count % Alternate map and absolute-error rows for each parameter.
         % Rows 1/2 use channel 1, rows 3/4 channel 2, and rows 5/6 channel 3.
         channel=ceil(row/2); is_error=mod(row,2)==0; % Map each pair of rows to one parameter and mark every even row as an error row.
         % Select these once per row so all methods have identical color scaling.

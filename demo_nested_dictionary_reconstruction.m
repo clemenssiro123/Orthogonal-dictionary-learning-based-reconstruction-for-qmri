@@ -37,6 +37,16 @@ initial_values=[2000 200 50]; % Uniform foreground start, inside all three bound
 % If you divide a map below, adjust its bounds, scales, reference_times
 % and initial_values manually; these settings are not changed automatically.
 
+%% Plot design: same defaults as demo_compare_all_reconstructions
+% These options affect display copies and PDF exports only.
+design=reconstruction_plot_design(lower_bounds,upper_bounds,4);
+design.ShowFigures=true; design.ShowRowFigures=false;
+design.ZeroBackground=true; design.RowShowTitles=false;
+design.ProfileRow=[]; % [] chooses the middle row.
+design.ZoomBox=[]; % [first_row last_row first_col last_col]; [] selects a body region.
+% MapLimits, ErrorLimits, MapColors, ErrorColors and sizes are editable in design.
+output_folder=fullfile(root,'data','demo_reports',['nested_dictionary_' datestr(now,'yyyymmdd_HHMMSS')]);
+
 %% 1. Acquisition and solver settings
 L=100; r=8; TR_ms=12;         % r must divide the reduced row count; r=1 works for any size.
 noise_std=.8;                % Standard deviation of each complex-noise component.
@@ -143,60 +153,41 @@ end
 disp(array2table(relative_error,'VariableNames',{'T1','T2','Density'}, ...
     'RowNames',{'Initial','Nested_dictionary'}));
 
-%% 5. Physical maps and the additional zero-background display
-% The third column hides background values only in a temporary plotting array.
-labels={'T1 (ms)','T2 (ms)','Density'};
-figure('Name','Nested dictionary reconstruction','Color','w','Position',[60 60 1100 850]);
-tiledlayout(3,3,'TileSpacing','compact','Padding','compact');
-for j=1:3
-    target=truth(:,:,j); result=u(:,:,j); limits=[0 max(target(:))];
-    ax=nexttile; imagesc(target,limits); axis image off; colormap(ax,gray); colorbar;
-    title([labels{j},': truth']);
-    ax=nexttile; imagesc(result,limits); axis image off; colormap(ax,gray); colorbar;
-    title(sprintf('Reconstruction; error %.1f%%',relative_error(2,j)));
-    result(~mask)=0; % Change a plotting copy only; background remains free in the solver.
-    ax=nexttile; imagesc(result,limits); axis image off; colormap(ax,gray); colorbar;
-    title('Background zero for display');
-end
-sgtitle(sprintf('Nested dictionary learning; %s GN; %s step norm',gauss_newton,step_norm));
+%% 5. Shared map/error reports, zoom insets, compact rows and profiles
+method_names={'Nested DL'};
+export_reconstruction_report(truth,{u},u0,mask,method_names,design,output_folder);
 
 %% 6. Outer convergence and accuracy of the inner dictionary solves
 % State histories include iteration zero; step/inner histories start at one.
 % The final inner D/C change is different from the total outer D/C change.
 % The inner-tolerance plot compares each channel's LAST inner change with eta_k.
 k=0:info.iterations;
-figure('Name','Nested dictionary convergence','Color','w','Position',[80 80 1100 700]);
+fig=reconstruction_report_figure('Nested dictionary convergence',design);
 tiledlayout(2,3,'TileSpacing','compact','Padding','compact');
 nexttile;
-semilogy(k,max([info.objective info.data info.patch info.spatial info.sparsity],eps),'LineWidth',1.1);
+colororder(gca,lines(5));
+semilogy(k,max([info.objective info.data info.patch info.spatial info.sparsity],eps),'LineWidth',design.LineWidth);
 grid on; xlabel('Outer step'); title('Objective contributions');
 legend('Total','Data','Patch fit','Spatial','L1','Location','best');
 nexttile;
-semilogy(k,max(info.projected_gradient,eps),'LineWidth',1.1);
+semilogy(k,max(info.projected_gradient,eps),'LineWidth',design.LineWidth);
 grid on; xlabel('Outer step'); title('Map projected gradient (D,C fixed)');
 nexttile;
-semilogy(1:info.iterations,max([info.step_norm info.dictionary_step_norm],eps),'LineWidth',1.1);
+colororder(gca,lines(2));
+semilogy(1:info.iterations,max([info.step_norm info.dictionary_step_norm],eps),'LineWidth',design.LineWidth);
 grid on; xlabel('Outer step'); title('Absolute outer changes'); legend('Map','D,C');
 nexttile;
-plot(1:info.iterations,info.inner_iterations,'LineWidth',1.1);
+colororder(gca,lines(3));
+plot(1:info.iterations,info.inner_iterations,'LineWidth',design.LineWidth);
 grid on; xlabel('Outer step'); title('Inner D/C update pairs'); legend('T1','T2','Density');
 nexttile;
-semilogy(1:info.iterations,max(info.inner_step_norm,eps),'LineWidth',1.1); hold on;
-semilogy(1:info.iterations,info.inner_tolerance,'k--','LineWidth',1.2);
+colororder(gca,lines(3));
+semilogy(1:info.iterations,max(info.inner_step_norm,eps),'LineWidth',design.LineWidth); hold on;
+semilogy(1:info.iterations,info.inner_tolerance,'k--','LineWidth',design.LineWidth);
 grid on; xlabel('Outer step'); title('Last inner change versus eta_k');
 legend('T1','T2','Density','eta_k','Location','best');
 nexttile;
-plot(k,info.background_rms(:,3),'LineWidth',1.1);
+plot(k,info.background_rms(:,3),'LineWidth',design.LineWidth);
 grid on; xlabel('Outer step'); title('Background RMS density');
 
-%% 7. Profiles retain the physical background values
-% Unlike the zero-background display, these curves show the actual returned maps.
-figure('Name','Nested dictionary profiles','Color','w','Position',[100 100 1100 350]);
-tiledlayout(1,3,'TileSpacing','compact','Padding','compact');
-row=round(n/2);
-for j=1:3
-    nexttile; plot(truth(row,:,j),'k--','LineWidth',1.3); hold on;
-    plot(u(row,:,j),'LineWidth',1.1);
-    grid on; xlabel('Column'); ylabel(labels{j}); title(sprintf('Row %d',row));
-end
-legend('Truth','Reconstruction','Location','best');
+export_reconstruction_pdf(fig,fullfile(output_folder,'convergence.pdf'),design);

@@ -26,7 +26,7 @@ input_file=fullfile(root,'data','PWbrain256.mat'); % Or the full path to your MA
 % input_file=fullfile(root,'data','artificial_maps.mat');
 % save(input_file,'T1','T2','Density');
 % DOWNSAMPLING a 256-by-256 input: 1 -> 256-by-256, 2 -> 128-by-128, 4 -> 64-by-64.
-pixel_stride=4;             % Keep every pixel_stride-th row/column; no interpolation.
+pixel_stride=2;             % Keep every pixel_stride-th row/column; no interpolation.
 % Optional direct division is shown after loading the maps below.
 % Bounds are physical [T1(ms), T2(ms), Density], chosen for your input maps.
 % Keep time lower bounds positive and density lower bound zero.
@@ -39,7 +39,7 @@ scales=[5000 500 100];       % Numerical scales in the SAME units; not intensity
 % Also review the BLIP grid spacing below for the new range.
 
 %% 1. Shared experiment and coarse-grid BLIP initialization
-L=100; r=8; TR_ms=12;       % r must divide the reduced row count; r=1 works for any size.
+L=100; r=16; TR_ms=12;       % r must divide the reduced row count; r=1 works for any size.
 noise_std=1.0; seed=1;       % Standard deviation of EACH real/imaginary component.
 h=1;
 initial_use_body_mask=true; % Legacy initialization: zero density outside body.
@@ -83,8 +83,8 @@ lm_options=struct('MaxIterations',15,'GaussNewton','approximate', ...
 % proximal D/C updates. MapTolerance AND DictionaryTolerance must be met
 % to stop for a small outer change. QP tolerances control each map subproblem.
 one_options=struct( ...
-    'MaxIterations',100,'Alpha',0.5, 'Lambda',[6.75 37.5 37.5]*2.0,'Beta',[.009 .009 .009]*1.5,...
-    'PatchSize',[6 6],'StepNorm','H01','GaussNewton','approximate', ...
+    'MaxIterations',80,'Alpha',0.5, 'Lambda',[6.75 37.5 37.5]*1.1,'Beta',[.009 .009 .009]*1.5,...
+    'PatchSize',[8 8],'StepNorm','H01','GaussNewton','approximate', ...
     'InnerStopRule','one-step','LambdaD',1,'LambdaC',1, ...
     'MapTolerance',1e-6,'DictionaryTolerance',1e-4, ...
     'InitialDamping',1,'MinDamping',1e-9,'MaxBacktracking',20, ...
@@ -99,7 +99,7 @@ nested_options=one_options;
 % override only the amount and accuracy of dictionary learning per outer step.
 nested_options.InnerStopRule='tolerance';
 nested_options.InnerMaxIterations=1000;
-nested_options.InnerToleranceScale=.005;
+nested_options.InnerToleranceScale=.006;
 nested_options.InnerDecay=.75; % eta_k=scale*||(D0,C0)||/(k+1)^gamma; gamma>1/2.
 % nested_options.Lambda=[4.5 45 45]*3.5; % Example of a separate method setting.
 

@@ -35,6 +35,16 @@ initial_values=[2000 200 50]; % Uniform foreground start, inside all three bound
 % If you divide a map below, adjust its bounds, scales, reference_times
 % and initial_values manually; these settings are not changed automatically.
 
+%% Plot design: same defaults as demo_compare_all_reconstructions
+% These options affect display copies and PDF exports only.
+design=reconstruction_plot_design(lower_bounds,upper_bounds,[4 3]);
+design.ShowFigures=true; design.ShowRowFigures=false;
+design.ZeroBackground=true; design.RowShowTitles=false;
+design.ProfileRow=[]; % [] chooses the middle row.
+design.ZoomBox=[]; % [first_row last_row first_col last_col]; [] selects a body region.
+% MapLimits, ErrorLimits, MapColors, ErrorColors and sizes are editable in design.
+output_folder=fullfile(root,'data','demo_reports',['comparison_dictionary_' datestr(now,'yyyymmdd_HHMMSS')]);
+
 %% 1. Shared acquisition and solver settings
 L=100; r=8; TR_ms=12;         % r must divide the reduced row count; r=1 works for any size.
 noise_std=.8;                % Standard deviation of each real/imaginary noise component.
@@ -135,7 +145,7 @@ options=struct('Scales',scales,'ReferenceTimes',reference_times,'H',1, ...
     'QPFunctionTolerance',qp_function_tolerance,'QPPCGTolerance',qp_pcg_tolerance, ...
     'QPRequireOptimality',true,'QPMaxIterations',300,'Verbose',true, ...
     'MonitorFcn',@(u) relative_body_error(u,truth,mask));
-rules={'tolerance','one-step'}; method_names={'Nested','One-step'};
+rules={'tolerance','one-step'}; method_names={'Nested DL','One-step DL'};
 % Both calls receive identical initial arrays. MATLAB passes them by value,
 % so learning in the first call cannot alter the second call's starting D/C.
 reconstructions=cell(1,2); dictionaries=cell(1,2); coefficients=cell(1,2); histories=cell(1,2);
@@ -177,60 +187,49 @@ disp(comparison);
 fprintf('Initial body errors [T1 T2 density]: [%.2f %.2f %.2f] percent.\n', ...
     relative_body_error(u0,truth,mask));
 
-%% 6. Side-by-side maps, with background zeroed only in plotting copies
-% Each row uses the same intensity limits for truth and both reconstructions.
-labels={'T1 (ms)','T2 (ms)','Density'};
-figure('Name','Dictionary comparison: maps','Color','w','Position',[50 50 1100 850]);
-tiledlayout(3,3,'TileSpacing','compact','Padding','compact');
-for j=1:3
-    target=truth(:,:,j); limits=[0 max(target(:))]; target(~mask)=0;
-    ax=nexttile; imagesc(target,limits); axis image off; colormap(ax,gray); colorbar;
-    title([labels{j},': truth']);
-    for method=1:2
-        display_map=reconstructions{method}(:,:,j); display_map(~mask)=0;
-        ax=nexttile; imagesc(display_map,limits); axis image off; colormap(ax,gray); colorbar;
-        title(sprintf('%s; error %.1f%%',method_names{method},relative_error(method,j)));
-    end
-end
-sgtitle('Common data and initialization; background zero for display only');
+%% 6. Shared map/error reports, zoom insets, compact rows and profiles
+export_reconstruction_report(truth,reconstructions,u0,mask,method_names,design,output_folder);
+labels=design.MapNames;
 
 %% 7. Compare optimization progress by outer steps AND elapsed time
 % Nested steps can do more dictionary work, so iteration count and elapsed
 % time answer different questions. max(...,eps) only keeps log plots finite.
-colors=lines(2);
-figure('Name','Dictionary comparison: convergence','Color','w','Position',[70 70 1000 700]);
+colors=design.MethodColors;
+fig=reconstruction_report_figure('Dictionary comparison: convergence',design);
 tiledlayout(2,2,'TileSpacing','compact','Padding','compact');
 nexttile; hold on;
 for method=1:2
     state=histories{method};
-    plot(0:state.iterations,max(state.objective,eps),'Color',colors(method,:),'LineWidth',1.2);
+    plot(0:state.iterations,max(state.objective,eps),'Color',colors(method,:),'LineStyle',design.LineStyles{method},'LineWidth',design.LineWidth);
 end
 set(gca,'YScale','log'); grid on; xlabel('Outer step'); title('Full objective');
 legend(method_names,'Location','best');
 nexttile; hold on;
 for method=1:2
     state=histories{method};
-    plot(state.time,max(state.objective,eps),'Color',colors(method,:),'LineWidth',1.2);
+    plot(state.time,max(state.objective,eps),'Color',colors(method,:),'LineStyle',design.LineStyles{method},'LineWidth',design.LineWidth);
 end
 set(gca,'YScale','log'); grid on; xlabel('Elapsed seconds'); title('Full objective versus time');
 nexttile; hold on;
 for method=1:2
     state=histories{method};
-    plot(0:state.iterations,max(state.projected_gradient,eps),'Color',colors(method,:),'LineWidth',1.2);
+    plot(0:state.iterations,max(state.projected_gradient,eps),'Color',colors(method,:),'LineStyle',design.LineStyles{method},'LineWidth',design.LineWidth);
 end
 set(gca,'YScale','log'); grid on; xlabel('Outer step'); title('Map projected gradient (D,C fixed)');
 nexttile; hold on;
 for method=1:2
     state=histories{method};
-    stairs(1:state.iterations,sum(state.inner_iterations,2),'Color',colors(method,:),'LineWidth',1.2);
+    stairs(1:state.iterations,sum(state.inner_iterations,2),'Color',colors(method,:),'LineStyle',design.LineStyles{method},'LineWidth',design.LineWidth);
 end
 grid on; xlabel('Completed outer step'); ylabel('D/C update pairs, summed over maps');
 title('Dictionary work per outer step'); % One-step uses 3 pairs: one for each active map.
 
+export_reconstruction_pdf(fig,fullfile(output_folder,'convergence.pdf'),design);
+
 %% 8. Reconstruction errors versus iterations and time
 % The MonitorFcn saved three scalar body errors per state; there is no need
 % to store a full image after every iteration to draw these curves.
-figure('Name','Dictionary comparison: errors','Color','w','Position',[90 90 1100 650]);
+fig=reconstruction_report_figure('Dictionary comparison: errors',design);
 tiledlayout(2,3,'TileSpacing','compact','Padding','compact');
 for row=1:2
     for j=1:3
@@ -239,7 +238,7 @@ for row=1:2
             state=histories{method};
             horizontal=0:state.iterations;
             if row==2, horizontal=state.time; end
-            plot(horizontal,state.monitor(:,j),'Color',colors(method,:),'LineWidth',1.2);
+            plot(horizontal,state.monitor(:,j),'Color',colors(method,:),'LineStyle',design.LineStyles{method},'LineWidth',design.LineWidth);
         end
         grid on; ylabel('Relative error inside body (%)'); title(labels{j});
         if row==1, xlabel('Outer step'); else, xlabel('Elapsed seconds'); end
@@ -247,19 +246,7 @@ for row=1:2
 end
 legend(method_names,'Location','best');
 
-%% 9. Profiles retain the physical background values
-% Select the middle image row and plot the stored, unmasked parameter values.
-figure('Name','Dictionary comparison: profiles','Color','w','Position',[110 110 1100 350]);
-tiledlayout(1,3,'TileSpacing','compact','Padding','compact');
-profile_row=round(n/2);
-for j=1:3
-    nexttile; plot(truth(profile_row,:,j),'k--','LineWidth',1.3); hold on;
-    for method=1:2
-        plot(reconstructions{method}(profile_row,:,j),'Color',colors(method,:),'LineWidth',1.1);
-    end
-    grid on; xlabel('Column'); ylabel(labels{j}); title(sprintf('Row %d',profile_row));
-end
-legend([{'Truth'},method_names],'Location','best');
+export_reconstruction_pdf(fig,fullfile(output_folder,'convergence.pdf'),design,true);
 
 function errors=relative_body_error(u,truth,mask)
 % Three scalar errors; storing full parameter maps at every step is unnecessary.

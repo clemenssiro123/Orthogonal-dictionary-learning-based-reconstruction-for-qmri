@@ -22,6 +22,7 @@ hs_err_pid*
 
 # Generated experiment folders. Keep the input MAT files directly in data/.
 /data/comparison_all_*/
+/data/demo_reports/
 /data/parameter_search_*/
 /data/denoiser_calibration_*/
 

@@ -1,20 +1,22 @@
-function [pdf_paths,zoom_box] = export_reconstruction_rows(truth,reconstructions,initialization,mask,method_names,design,output_folder) % Write the eight compact PDFs to output_folder and return their paths and shared zoom box.
-%EXPORT_RECONSTRUCTION_ROWS Eight compact, single-page PDFs (MATLAB R2021b).
+function [pdf_paths,zoom_box] = export_reconstruction_rows(truth,reconstructions,initialization,mask,method_names,design,output_folder) % Write compact PDFs and return their paths and shared zoom box.
+%EXPORT_RECONSTRUCTION_ROWS Compact, single-page PDFs (MATLAB R2021b).
 % Six files compare T1, T2 and Density maps and absolute errors. Each contains
 % one row: ground truth, then RECONSTRUCTIONS in METHOD_NAMES order. The demo
 % supplies BLIP, LM, one-step DL and nested DL. The truth error is zero.
 % Two more files show initialization maps/errors, ordered T1, T2, Density.
+% A single-image input instead writes image_map_comparison.pdf and
+% image_error_comparison.pdf. INITIALIZATION=[] omits initialization PDFs.
 % All panels share one zoom box. Comparison rows share one colorbar;
 % initialization panels have separate colorbars for their different units.
 %
 % Uses the same DESIGN fields as export_reconstruction_comparison. Optional:
 %   RowPanelSize    Longest map side in pixels (default 300).
 %   RowPanelGap     Horizontal gap in pixels (default 14).
-%   RowShowTitles   Show method/parameter headings (default true).
+%   RowShowTitles   Show method/parameter headings (default false).
 %   ShowRowFigures  Open compact figure windows (default false); also requires
 %                   ShowFigures=true. PDFs are always exported either way.
 % Output files replace previous exports with the same names in OUTPUT_FOLDER.
-% Returns the eight paths and the actual inclusive ZoomBox coordinates.
+% Returns the exported paths and the actual inclusive ZoomBox coordinates.
 %
 % Replot an existing experiment without rerunning the reconstruction:
 %   s=load(fullfile(run_folder,'results.mat'));
@@ -24,10 +26,10 @@ function [pdf_paths,zoom_box] = export_reconstruction_rows(truth,reconstructions
 
     %% Validate before creating any figures or files
     [n,m,channels]=size(truth); % Read image height, width and parameter-channel count from the reference maps.
-    assert(channels==3 && n>=2 && m>=2,'Truth must contain three 2-D parameter maps.'); % Require T1, T2 and density maps with at least two rows and columns.
+    assert(any(channels==[1 3]) && n>=2 && m>=2,'Truth must contain one image or three parameter maps.');
     assert(isequal(size(mask),[n m]),'Mask and parameter maps must have the same size.'); % Require one mask entry per image pixel.
-    assert(isequal(size(initialization),size(truth)), ... % Check that initialization and reference arrays have identical dimensions.
-        'Initialization must have the same size as truth.'); % Report incompatible initialization dimensions before writing files.
+    assert(isempty(initialization) || isequal(size(initialization),size(truth)), ...
+        'Initialization must be empty or have the same size as truth.');
     assert(numel(reconstructions)==numel(method_names) && ~isempty(reconstructions), ... % Require at least one reconstruction and one method name for each result.
         'Provide one name per reconstruction.'); % Report an empty reconstruction list or a mismatch in method-name count.
     for k=1:numel(reconstructions) % Validate each reconstruction array in turn.
@@ -36,7 +38,7 @@ function [pdf_paths,zoom_box] = export_reconstruction_rows(truth,reconstructions
     end
     if ~isfield(design,'RowPanelSize'), design.RowPanelSize=300; end % Default the longest displayed map side to 300 pixels for older saved designs.
     if ~isfield(design,'RowPanelGap'), design.RowPanelGap=14; end % Default the horizontal gap between maps to 14 pixels.
-    if ~isfield(design,'RowShowTitles'), design.RowShowTitles=false; end % Show method or parameter headings unless explicitly disabled.
+    if ~isfield(design,'RowShowTitles'), design.RowShowTitles=false; end % Omit headings unless explicitly enabled.
     if ~isfield(design,'ShowRowFigures'), design.ShowRowFigures=false; end % Export compact PDFs without opening windows by default, including for older saved runs.
     validateattributes(design.RowPanelSize,{'numeric'}, ... % Check the numeric map-size setting.
         {'real','finite','scalar','>=',100}); % Require a finite scalar size of at least 100 pixels.
@@ -57,10 +59,11 @@ function [pdf_paths,zoom_box] = export_reconstruction_rows(truth,reconstructions
     headings(strcmp(headings,'One-step DL'))={'DL (one step)'}; % Use a short, consistent heading for one-step dictionary learning.
     headings(strcmp(headings,'Nested DL'))={'DL (nested)'}; % Use a short, consistent heading for nested dictionary learning.
     stems={'T1','T2','Density'}; % Define the three parameter prefixes used in the PDF filenames.
+    if channels==1, stems={'image'}; end
     map_labels={'','',''}; % Define map colorbar labels; TeX underscores produce subscripts.
     error_labels={'','',''}; % Define error labels in the same physical units as the corresponding maps.
-    pdf_paths=cell(1,8); % Reserve one returned filename for each of the eight PDFs.
-    for channel=1:3 % Export T1, T2 and density in channel order.
+    pdf_paths=cell(1,2*channels+2*~isempty(initialization));
+    for channel=1:channels % Export available parameters in channel order.
         for is_error=0:1 % For each channel, export the map first and its absolute error second.
             values=cell(size(shown)); % Allocate a display array for every comparison column.
             for column=1:numel(shown) % Prepare ground truth and each reconstruction in the same order as the headings.
@@ -81,20 +84,21 @@ function [pdf_paths,zoom_box] = export_reconstruction_rows(truth,reconstructions
     end
 
     %% Initialization: three parameters in one row, each with its own scale
+    if isempty(initialization), return; end
     for is_error=0:1 % Export initialization maps first, then initialization absolute errors.
-        values=cell(1,3); % Allocate one display panel for each of the three parameters.
-        for channel=1:3 % Prepare T1, T2 and density in left-to-right order.
+        values=cell(1,channels);
+        for channel=1:channels
             values{channel}=display_values(initialization,truth,channel,is_error,mask,design); % Extract the initial map or its absolute error and apply display-only masking.
         end
         if is_error % Choose settings for the initialization error page.
             filename='initialization_errors.pdf'; labels=error_labels; % Select the initialization error filename and its three parameter headings.
-            limits=design.ErrorLimits; colors=repmat({design.ErrorColors},1,3); % Use each parameter's error limits and the common error colormap.
+            limits=design.ErrorLimits; colors=repmat({design.ErrorColors},1,channels);
         else % Otherwise choose settings for the initialization map page.
             filename='initialization_maps.pdf'; labels=map_labels; % Select the initialization map filename and its three parameter headings.
             limits=design.MapLimits; colors=design.MapColors; % Use each parameter's map limits and its own colormap.
         end
-        pdf_paths{7+is_error}=fullfile(output_folder,filename); % Store initialization map/error paths in the final two return slots.
-        compact_row(values,labels,limits,colors,labels,false,rows,cols,design,pdf_paths{7+is_error}); % Export a three-panel page with a separate colorbar for each parameter.
+        pdf_paths{2*channels+1+is_error}=fullfile(output_folder,filename);
+        compact_row(values,labels,limits,colors,labels,false,rows,cols,design,pdf_paths{2*channels+1+is_error});
     end
 end
 

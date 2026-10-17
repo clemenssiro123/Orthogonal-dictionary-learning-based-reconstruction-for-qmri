@@ -110,6 +110,8 @@ To use your own reference maps, set `input_file` in the selected demo to a MAT f
 
 The solvers return reconstructed maps and iteration histories. The comparison demo additionally records errors, residuals, timings, and stopping reasons in `results.mat`.
 
+The other demos use the same plot style: shared map/error color limits, linked zoom insets, compact PDF rows, and profile reports. They export to a new time-stamped folder under `data/demo_reports/`. Edit each demo's `design` settings to choose the zoom, profile row, background display, or figure visibility; the common defaults are in `reconstruction_plot_design.m`. Convergence PDFs retain each method's own diagnostics. The denoising demo exports a single image channel, while legacy BLIP omits initialization and convergence reports because its interface does not return those quantities.
+
 ## Reference
 
 Guozhi Dong, Michael Hintermüller, and Clemens Sirotenko. **Dictionary learning based regularization in quantitative MRI: a nested alternating optimization framework.** *Inverse Problems*, **41** (2025), 085007.

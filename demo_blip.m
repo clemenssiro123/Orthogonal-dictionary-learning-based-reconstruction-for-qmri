@@ -141,31 +141,15 @@ error_table = table(relative_error_percent, rmse_in_object, ...
 disp(error_table);
 fprintf('BLIP reconstruction time: %.2f seconds.\n', reconstruction_seconds);
 
-%% 6. Plot ground truth, reconstruction, and absolute error for each map
-% Ground truth and reconstruction share the ground-truth range in each row.
-% Outliers saturate this display scale; reconstruction values are not clipped.
-% Absolute-error plots show the full errors in the same physical units.
-figure('Name', 'BLIP reconstruction', 'Color', 'w', 'Position', [100 100 1100 800]);
-% Rows select T1/T2/density; columns show truth, estimate and absolute error.
-tiledlayout(3, 3, 'TileSpacing', 'compact', 'Padding', 'compact');
-plot_names = {'T1 (ms)', 'T2 (ms)', 'Density'};
-for j = 1:3
-    truth = truth_maps{j};
-    reconstruction = reconstructed_maps{j};
-    limits = [0, max(truth(:))];
-    % Apply the same intensity range to truth and estimate for this parameter.
-
-    ax = nexttile;
-    imagesc(truth, limits); axis image off; colorbar; colormap(ax, gray);
-    title([plot_names{j}, ': ground truth']);
-
-    ax = nexttile;
-    imagesc(reconstruction, limits); axis image off; colorbar; colormap(ax, gray);
-    title([plot_names{j}, ': BLIP']);
-
-    ax = nexttile;
-    imagesc(abs(reconstruction - truth)); axis image off; colorbar; colormap(ax, hot);
-    title(sprintf('Absolute error (relative: %.1f%%)', relative_error_percent(j)));
-end
-sgtitle(sprintf('BLIP: %d x %d pixels, L = %d, TR = %g ms, r = %d, noise std = %g', ...
-    n1, n2, L, repetition_time_ms, r, noise_std));
+%% 6. Shared map/error reports, zoom insets, compact rows and profiles
+% Legacy BLIP has no density bound; use the input density maximum for display.
+% It returns neither initial parameter maps nor a convergence history.
+design=reconstruction_plot_design([lower_bounds 0], ...
+    [upper_bounds max(Density(:))],1);
+design.ShowFigures=true; design.ShowRowFigures=false;
+design.ZeroBackground=true; design.RowShowTitles=false;
+design.ProfileRow=[]; design.ZoomBox=[];
+% MapLimits, ErrorLimits, MapColors, ErrorColors and sizes are editable in design.
+output_folder=fullfile(project_root,'data','demo_reports',['blip_' datestr(now,'yyyymmdd_HHMMSS')]);
+export_reconstruction_report(cat(3,truth_maps{:}), ...
+    {cat(3,reconstructed_maps{:})},[],mask,{'BLIP'},design,output_folder);

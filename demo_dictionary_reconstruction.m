@@ -49,6 +49,18 @@ truth = double(truth(1:pixel_stride:end, 1:pixel_stride:end));
 noisy = truth + noise_std*randn(size(truth));
 normalized_image = noisy/image_scale;
 
+%% Plot design: same defaults as demo_compare_all_reconstructions
+% This demo has one image and no body mask; display and errors use all pixels.
+display_lower=min(0,min(truth(:))); display_upper=max(truth(:));
+if display_upper<=display_lower, display_upper=display_lower+1; end
+design=reconstruction_plot_design(display_lower,display_upper,[1 3 4]);
+design.MapNames={image_variable};
+design.ShowFigures=true; design.ShowRowFigures=false;
+design.ZeroBackground=true; design.RowShowTitles=false;
+design.ProfileRow=[]; design.ZoomBox=[];
+% MapLimits, ErrorLimits, MapColors, ErrorColors and sizes are editable in design.
+output_folder=fullfile(project_root,'data','demo_reports',['dictionary_denoising_' datestr(now,'yyyymmdd_HHMMSS')]);
+
 %% 2. Extract patches once; the dictionary function never sees ground truth
 [R_mat, ~, overlap_count] = create_R_matrix(size(noisy), patch_size, 1);
 % R_mat copies image pixels into all stride-one patches. X has one patch per
@@ -108,29 +120,19 @@ fprintf('Objective: %.6g -> %.6g. Nonzero coefficients: %.1f%%.\n', ...
 % beta controls denoising versus detail loss. Ground truth never enters the
 % learning updates or the stopping criterion.
 
-%% 6. Plot reconstruction and the stopping quantity
-figure('Name','Dictionary reconstruction', 'Color','w', ...
-    'Position',[100 100 1100 700]);
-tiledlayout(2, 3, 'TileSpacing','compact', 'Padding','compact');
-limits = [0 max(truth(:))];
-ax = nexttile; imagesc(truth, limits); axis image off; colorbar; colormap(ax, gray);
-title(['Ground truth: ' image_variable], 'Interpreter','none');
-ax = nexttile; imagesc(noisy, limits); axis image off; colorbar; colormap(ax, gray);
-title('Noisy image');
-ax = nexttile; imagesc(reconstruction, limits); axis image off; colorbar; colormap(ax, gray);
-title('Dictionary reconstruction');
-error_limit = max([abs(noisy(:)-truth(:)); abs(reconstruction(:)-truth(:))]);
-% Use one maximum error for both error maps so their colors are comparable.
-ax = nexttile; imagesc(abs(noisy-truth), [0 error_limit]);
-axis image off; colorbar; colormap(ax, hot); title('Absolute error: noisy');
-ax = nexttile; imagesc(abs(reconstruction-truth), [0 error_limit]);
-axis image off; colorbar; colormap(ax, hot); title('Absolute error: reconstructed');
-nexttile;
-semilogy([fixed_info.step_norm; info.step_norm], 'LineWidth',1.2);
-% Join the two histories. The vertical line marks where the warm start begins;
-% the horizontal line marks the requested inner accuracy, not image error.
+%% 6. Shared image/error reports, zoom insets, compact rows and profiles
+method_names={'Noisy','Fixed steps','After continuation'};
+export_reconstruction_report(truth,images,noisy,true(size(truth)), ...
+    method_names,design,output_folder);
+
+%% 7. Dictionary stopping quantity
+fig=reconstruction_report_figure('Dictionary convergence',design);
+semilogy([fixed_info.step_norm; info.step_norm],'Color',design.MethodColors(3,:), ...
+    'LineWidth',design.LineWidth);
+% Join the histories; distinguish the continuation point from the tolerance.
 hold on;
-yline(tolerance, '--', 'Tolerance');
-xline(fixed_info.iterations, ':', 'Continuation');
+yline(tolerance,'--','Tolerance');
+xline(fixed_info.iterations,':','Continuation');
 xlabel('D/C update pairs'); ylabel('Combined iterate change'); grid on;
 title('Paper stopping criterion');
+export_reconstruction_pdf(fig,fullfile(output_folder,'convergence.pdf'),design);

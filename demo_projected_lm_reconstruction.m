@@ -37,16 +37,26 @@ initial_values=[2000 200 50]; % Uniform foreground start, inside all three bound
 % If you divide a map below, adjust its bounds, scales, reference_times
 % and initial_values manually; these settings are not changed automatically.
 
+%% Plot design: same defaults as demo_compare_all_reconstructions
+% These options affect display copies and PDF exports only.
+design=reconstruction_plot_design(lower_bounds,upper_bounds,2);
+design.ShowFigures=true; design.ShowRowFigures=false;
+design.ZeroBackground=true; design.RowShowTitles=false;
+design.ProfileRow=[]; % [] chooses the middle row.
+design.ZoomBox=[]; % [first_row last_row first_col last_col]; [] selects a body region.
+% MapLimits, ErrorLimits, MapColors, ErrorColors and sizes are editable in design.
+output_folder=fullfile(root,'data','demo_reports',['projected_lm_' datestr(now,'yyyymmdd_HHMMSS')]);
+
 %% 1. Acquisition and solver settings
-L=80;
-r=8;                      % Must divide the reduced row count; r=1 works for any size.
-noise_std=2.2;             % Standard deviation of EACH real/imaginary part.
+L=100;
+r=32;                      % Must divide the reduced row count; r=1 works for any size.
+noise_std=1.0;             % Standard deviation of EACH real/imaginary part.
 TR_ms=12;
-max_iterations=15;
+max_iterations=14;
 gauss_newton='approximate'; % Sparse direct solve; 'exact' uses sampled FFT + PCG.
-initial_damping=r^2;      % Damping before the first update (k=0).
-damping_decay=.15;        % lambda_k=max(floor,lambda_0*decay^k,weight*residual).
-residual_damping_weight=1e-15;
+initial_damping=1;        % Damping before the first update (k=0).
+damping_decay=.6;         % lambda_k=max(floor,lambda_0*decay^k,weight*residual).
+residual_damping_weight=1e-12;
 min_damping=1e-8;
 linear_tolerance=1e-8;    % Checked relative residual BEFORE projection.
 linear_max_iterations=500; % PCG limit for exact GN.
@@ -181,62 +191,39 @@ fprintf('RMS background deviations (T1-T1ref, T2-T2ref, density):\n');
 disp(array2table(background_deviation_rms, ...
     'VariableNames',{'T1Deviation','T2Deviation','Density'},'RowNames',labels));
 
-%% 5. Physical maps and a separate zero-background display
-% Make both versions from copies so hiding the background cannot change metrics.
-plot_names={'T1 (ms)','T2 (ms)','Density'};
-for masked_display=[false true]
-    figure_name='Projected LM: physical maps'; caption='Physical maps';
-    if masked_display
-        figure_name='Projected LM: zero-background display';
-        caption='Background set to zero for display';
-    end
-    figure('Name',figure_name,'Color','w','Position',[50 50 1000 850]);
-    tiledlayout(3,2,'TileSpacing','compact','Padding','compact');
-    for j=1:3
-        target=truth(:,:,j); display_map=reconstruction(:,:,j);
-        limits=[0 max(target(:))];
-        if masked_display, target(~mask)=0; display_map(~mask)=0; end
-        ax=nexttile; imagesc(target,limits); axis image off; colormap(ax,gray); colorbar;
-        title([plot_names{j},': truth']);
-        ax=nexttile; imagesc(display_map,limits); axis image off; colormap(ax,gray); colorbar;
-        title(sprintf('%s: projected LM\nError in body: %.1f%%',plot_names{j},relative_inside(2,j)));
-    end
-    sgtitle(sprintf('%s; physical L2 damping; GN: %s',caption,gauss_newton));
-end
+%% 5. Shared map/error reports, zoom insets, compact rows and profiles
+method_names={'LM'};
+export_reconstruction_report(truth,{reconstruction},reference_start,mask, ...
+    method_names,design,output_folder);
 
-%% 6. Data residual, stationarity, background density and unmasked profiles
+%% 6. Data residual, stationarity and background density
 % Include iteration zero. realmin avoids log(0) in plots without changing histories.
-figure('Name','Projected LM: convergence and profiles','Color','w','Position',[80 80 1200 750]);
-tiledlayout(2,3,'TileSpacing','compact','Padding','compact');
-nexttile; semilogy(0:info.iterations,max(info.data_residual_norm,realmin),'LineWidth',1.2);
+fig=reconstruction_report_figure('Projected LM: convergence',design);
+tiledlayout(1,3,'TileSpacing','compact','Padding','compact');
+nexttile; semilogy(0:info.iterations,max(info.data_residual_norm,realmin),'LineWidth',design.LineWidth);
 if use_discrepancy && info.discrepancy_threshold>0
     hold on; yline(info.discrepancy_threshold,'k--','tau*delta');
 end
 grid on; xlabel('Update'); ylabel('Residual norm'); title('Measured data and noise threshold');
-nexttile; semilogy(0:info.iterations,max(info.projected_gradient,realmin),'LineWidth',1.2);
+nexttile; semilogy(0:info.iterations,max(info.projected_gradient,realmin),'LineWidth',design.LineWidth);
 grid on; xlabel('Update'); ylabel('Normalized coordinates'); title('Projected gradient norm');
-nexttile; plot(0:info.iterations,info.background_rms(:,3),'LineWidth',1.2);
+nexttile; plot(0:info.iterations,info.background_rms(:,3),'LineWidth',design.LineWidth);
 grid on; xlabel('Update'); ylabel('RMS density'); title('Density leaking into background');
-profile_row=round(n/2);
-for j=1:3
-    nexttile; plot(truth(profile_row,:,j),'k--','LineWidth',1.5); hold on;
-    plot(reconstruction(profile_row,:,j),'LineWidth',1.1);
-    grid on; xlabel('Column'); ylabel(plot_names{j}); title(sprintf('Row %d profile',profile_row));
-end
-legend({'Truth','Projected LM'},'Location','best');
-sgtitle(sprintf('Projected LM; physical L2 damping; GN: %s',gauss_newton));
+export_reconstruction_pdf(fig,fullfile(output_folder,'convergence.pdf'),design);
 
 %% 7. Scheduled damping, linear accuracy and the effect of projection
 % These histories have one value per completed update. Linear residuals are
 % measured before clipping; step norms use the actual increment after clipping.
-figure('Name','Projected LM: solver diagnostics','Color','w','Position',[100 100 1100 650]);
+fig=reconstruction_report_figure('Projected LM: solver diagnostics',design);
 tiledlayout(2,2,'TileSpacing','compact','Padding','compact');
-nexttile; semilogy(1:info.iterations,info.damping,'LineWidth',1.2);
+nexttile; semilogy(1:info.iterations,info.damping,'LineWidth',design.LineWidth);
 grid on; xlabel('Update'); ylabel('Lambda'); title('Scheduled damping');
-nexttile; semilogy(1:info.iterations,max(info.linear_relative_residual,realmin),'LineWidth',1.2);
+nexttile; semilogy(1:info.iterations,max(info.linear_relative_residual,realmin),'LineWidth',design.LineWidth);
 hold on; yline(linear_tolerance,'k--'); grid on;
 xlabel('Update'); ylabel('Relative residual'); title('Linear system before projection');
-nexttile; plot(1:info.iterations,100*info.projection_fraction,'LineWidth',1.2);
+nexttile; plot(1:info.iterations,100*info.projection_fraction,'LineWidth',design.LineWidth);
 grid on; xlabel('Update'); ylabel('Percent of entries'); title('Entries clipped to bounds');
-nexttile; semilogy(1:info.iterations,max(info.step_norm,realmin),'LineWidth',1.2);
+nexttile; semilogy(1:info.iterations,max(info.step_norm,realmin),'LineWidth',design.LineWidth);
 grid on; xlabel('Update'); ylabel('Relative step'); title('Actual step after projection');
+
+export_reconstruction_pdf(fig,fullfile(output_folder,'convergence.pdf'),design,true);
