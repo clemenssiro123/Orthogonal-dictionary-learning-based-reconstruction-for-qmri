@@ -11,6 +11,7 @@ close all;
 rng(1);
 % Locate data and helpers relative to this script's own folder.
 root=fileparts(mfilename('fullpath'));
+addpath(fullfile(root,'plot_routines'));
 addpath(fullfile(root,'helper_functions'),fullfile(root,'bloch_simulations'));
 
 %% Input: change the file and physical ranges here
@@ -220,74 +221,12 @@ fprintf('Initial body errors [T1 T2 density]: [%.2f %.2f %.2f] percent.\n', ...
 export_reconstruction_report(truth,reconstructions,u0,mask,method_names,design,output_folder);
 labels=design.MapNames;
 
-%% 7. Compare optimization progress by outer steps AND elapsed time
-% Nested steps can do more dictionary work, so iteration count and elapsed
-% time answer different questions. max(...,eps) only keeps log plots finite.
-colors=design.MethodColors;
-fig=reconstruction_report_figure('Dictionary comparison: convergence',design);
-tiledlayout(3,2,'TileSpacing','compact','Padding','compact');
-nexttile; hold on;
-for method=1:2
-    state=histories{method};
-    plot(0:state.iterations,max(state.objective,eps),'Color',colors(method,:),'LineStyle',design.LineStyles{method},'LineWidth',design.LineWidth);
-end
-set(gca,'YScale','log'); grid on; xlabel('Outer step'); title('Full objective');
-legend(method_names,'Location','best');
-nexttile; hold on;
-for method=1:2
-    state=histories{method};
-    plot(state.time,max(state.objective,eps),'Color',colors(method,:),'LineStyle',design.LineStyles{method},'LineWidth',design.LineWidth);
-end
-set(gca,'YScale','log'); grid on; xlabel('Elapsed seconds'); title('Full objective versus time');
-for change_panel=1:2
-    nexttile; hold on;
-    for method=1:2
-        state=histories{method}; values=state.step_norm;
-        if change_panel==2, values=state.dictionary_step_norm; end
-        plot(1:state.iterations,max(values,eps),'Color',colors(method,:), ...
-            'LineStyle',design.LineStyles{method},'LineWidth',design.LineWidth);
-    end
-    tolerance=options.MapTolerance;
-    if change_panel==2, tolerance=options.DictionaryTolerance; end
-    if tolerance>0, yline(tolerance,':k','Stopping tolerance','HandleVisibility','off'); end
-    set(gca,'YScale','log'); grid on; xlabel('Completed outer step'); ylabel('Absolute change');
-    if change_panel==1
-        title(sprintf('Successive map change (%s norm)',options.StepNorm));
-    else
-        title('Successive D,C change (combined Frobenius norm)');
-    end
-end
-nexttile([1 2]); hold on;
-for method=1:2
-    state=histories{method};
-    stairs(1:state.iterations,sum(state.inner_iterations,2),'Color',colors(method,:),'LineStyle',design.LineStyles{method},'LineWidth',design.LineWidth);
-end
-grid on; xlabel('Completed outer step'); ylabel('D/C update pairs, summed over maps');
-title('Dictionary work per outer step'); % One-step uses 3 pairs: one for each active map.
-
+%% 7. Optimization progress and reconstruction errors
+fig=plot_dictionary_comparison(histories,method_names,options,design);
 export_reconstruction_pdf(fig,fullfile(output_folder,'convergence.pdf'),design);
-
-%% 8. Reconstruction errors versus iterations and time
-% The MonitorFcn saved three scalar body errors per state; there is no need
-% to store a full image after every iteration to draw these curves.
-fig=reconstruction_report_figure('Dictionary comparison: errors',design);
-tiledlayout(2,3,'TileSpacing','compact','Padding','compact');
-for row=1:2
-    for j=1:3
-        nexttile; hold on;
-        for method=1:2
-            state=histories{method};
-            horizontal=0:state.iterations;
-            if row==2, horizontal=state.time; end
-            plot(horizontal,state.monitor(:,j),'Color',colors(method,:),'LineStyle',design.LineStyles{method},'LineWidth',design.LineWidth);
-        end
-        grid on; ylabel('Relative error inside body (%)'); title(labels{j});
-        if row==1, xlabel('Outer step'); else, xlabel('Elapsed seconds'); end
-    end
-end
-legend(method_names,'Location','best');
-
+fig=plot_dictionary_comparison(histories,method_names,options,design,'errors');
 export_reconstruction_pdf(fig,fullfile(output_folder,'convergence.pdf'),design,true);
+
 
 function errors=relative_body_error(u,truth,mask)
 % Three scalar errors; storing full parameter maps at every step is unnecessary.

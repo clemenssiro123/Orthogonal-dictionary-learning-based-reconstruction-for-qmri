@@ -9,6 +9,7 @@ clearvars;
 close all;
 rng(1);
 project_root = fileparts(mfilename('fullpath'));
+addpath(fullfile(project_root,'plot_routines'));
 % Build paths relative to this script so the helper folder is found reliably.
 addpath(fullfile(project_root, 'helper_functions'));
 
@@ -130,13 +131,5 @@ export_reconstruction_report(truth,images,noisy,true(size(truth)), ...
     method_names,design,output_folder);
 
 %% 7. Dictionary stopping quantity
-fig=reconstruction_report_figure('Dictionary convergence',design);
-semilogy([fixed_info.step_norm; info.step_norm],'Color',design.MethodColors(3,:), ...
-    'LineWidth',design.LineWidth);
-% Join the histories; distinguish the continuation point from the tolerance.
-hold on;
-yline(tolerance,'--','Tolerance');
-xline(fixed_info.iterations,':','Continuation');
-xlabel('D/C update pairs'); ylabel('Combined iterate change'); grid on;
-title('Paper stopping criterion');
+fig=plot_dictionary_learning_convergence(fixed_info,info,tolerance,design);
 export_reconstruction_pdf(fig,fullfile(output_folder,'convergence.pdf'),design);

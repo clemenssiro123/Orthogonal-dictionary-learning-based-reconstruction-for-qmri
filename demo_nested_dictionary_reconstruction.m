@@ -12,6 +12,7 @@ close all;
 rng(1);
 % Locate data and helpers relative to this script's own folder.
 root=fileparts(mfilename('fullpath'));
+addpath(fullfile(root,'plot_routines'));
 addpath(fullfile(root,'helper_functions'),fullfile(root,'bloch_simulations'));
 
 %% Input: change the file and physical ranges here
@@ -182,39 +183,6 @@ disp(array2table(relative_error,'VariableNames',{'T1','T2','Density'}, ...
 method_names={'Nested DL'};
 export_reconstruction_report(truth,{u},u0,mask,method_names,design,output_folder);
 
-%% 6. Outer convergence and accuracy of the inner dictionary solves
-% State histories include iteration zero; step/inner histories start at one.
-% The final inner D/C change is different from the total outer D/C change.
-% The inner-tolerance plot compares each channel's LAST inner change with eta_k.
-k=0:info.iterations;
-fig=reconstruction_report_figure('Nested dictionary convergence',design);
-tiledlayout(2,3,'TileSpacing','compact','Padding','compact');
-nexttile;
-colororder(gca,lines(5));
-semilogy(k,max([info.objective info.data info.patch info.spatial info.sparsity],eps),'LineWidth',design.LineWidth);
-grid on; xlabel('Outer step'); title('Objective contributions');
-legend('Total','Data','Patch fit','Spatial','L1','Location','best');
-nexttile;
-semilogy(1:info.iterations,max(info.step_norm,eps),'LineWidth',design.LineWidth);
-if options.MapTolerance>0, yline(options.MapTolerance,':k','Stopping tolerance'); end
-grid on; xlabel('Completed outer step'); ylabel('Absolute change');
-title(sprintf('Successive map change (%s norm)',options.StepNorm));
-nexttile;
-semilogy(1:info.iterations,max(info.dictionary_step_norm,eps),'LineWidth',design.LineWidth);
-if options.DictionaryTolerance>0, yline(options.DictionaryTolerance,':k','Stopping tolerance'); end
-grid on; xlabel('Completed outer step'); ylabel('Combined Frobenius norm'); title('Successive D,C change');
-nexttile;
-colororder(gca,lines(3));
-plot(1:info.iterations,info.inner_iterations,'LineWidth',design.LineWidth);
-grid on; xlabel('Outer step'); title('Inner D/C update pairs'); legend('T1','T2','Density');
-nexttile;
-colororder(gca,lines(3));
-semilogy(1:info.iterations,max(info.inner_step_norm,eps),'LineWidth',design.LineWidth); hold on;
-semilogy(1:info.iterations,info.inner_tolerance,'k--','LineWidth',design.LineWidth);
-grid on; xlabel('Outer step'); title('Last inner change versus eta_k');
-legend('T1','T2','Density','eta_k','Location','best');
-nexttile;
-plot(k,info.background_rms(:,3),'LineWidth',design.LineWidth);
-grid on; xlabel('Outer step'); title('Background RMS density');
-
+%% 6. Outer convergence and inner dictionary accuracy
+fig=plot_nested_convergence(info,options,design);
 export_reconstruction_pdf(fig,fullfile(output_folder,'convergence.pdf'),design);

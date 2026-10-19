@@ -13,6 +13,7 @@ clearvars;
 close all;
 
 project_root = fileparts(mfilename('fullpath'));
+addpath(fullfile(project_root,'plot_routines'));
 % Resolve helper/data folders relative to this script, not the current folder.
 addpath(fullfile(project_root, 'bloch_simulations'));
 addpath(fullfile(project_root, 'helper_functions'));

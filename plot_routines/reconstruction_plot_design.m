@@ -1,8 +1,16 @@
 function design = reconstruction_plot_design(lower_bounds,upper_bounds,method_indices)
-%RECONSTRUCTION_PLOT_DESIGN Plot defaults from demo_compare_all_reconstructions.
-% MATLAB R2021b. Bounds set display scales only; no solver values are changed.
-% METHOD_INDICES select colors/styles: 1 BLIP, 2 LM, 3 one-step, 4 nested.
-% One pair of bounds also supports the standalone image-denoising demo.
+%RECONSTRUCTION_PLOT_DESIGN Complete display defaults for standalone demos.
+% DESIGN = RECONSTRUCTION_PLOT_DESIGN(LOWER_BOUNDS,UPPER_BOUNDS,METHOD_INDICES)
+% Supply three bounds per side in physical [T1,T2,Density] units, or one
+% bound pair for a single-image denoising plot. Bounds set display ranges;
+% they do not alter solver constraints or stored reconstruction values.
+% METHOD_INDICES selects method colors/styles in the requested order:
+% 1 BLIP, 2 LM, 3 one-step DL, 4 nested DL.
+% DESIGN includes map/error limits and colors, fonts, figure sizes, zoom,
+% profile row and export visibility. Reuse a saved run's design to preserve
+% any custom styling from that run instead of constructing fresh defaults.
+% MATLAB R2021b.
+% See also RECONSTRUCTION_REPORT_FIGURE, PLOT_COMPARISON.
     validateattributes(lower_bounds,{'numeric'},{'real','finite','vector'});
     validateattributes(upper_bounds,{'numeric'},{'real','finite','vector'});
     lower_bounds=lower_bounds(:); upper_bounds=upper_bounds(:);

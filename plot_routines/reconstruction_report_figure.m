@@ -1,6 +1,13 @@
 function fig = reconstruction_report_figure(name,design)
-%RECONSTRUCTION_REPORT_FIGURE Consistent report fonts, geometry and line styles.
-% MATLAB R2021b. ShowFigures=false still allows PDF export.
+%RECONSTRUCTION_REPORT_FIGURE Create an empty, consistently styled figure.
+% FIG = RECONSTRUCTION_REPORT_FIGURE(NAME,DESIGN)
+% NAME is the figure-window title. DESIGN is a complete display structure
+% from reconstruction_plot_design or a saved run; fonts, size, method
+% colors, line styles and default line width are applied to the figure.
+% ShowFigures=false creates a hidden figure that can still be exported.
+% This function only creates FIG; it does not populate axes or write files.
+% MATLAB R2021b.
+% See also RECONSTRUCTION_PLOT_DESIGN, EXPORT_RECONSTRUCTION_PDF.
     visible='off'; if design.ShowFigures, visible='on'; end
     fig=figure('Name',name,'Color','w','Visible',visible,'Units','pixels', ...
         'Position',[40 40 design.FigureSize], ...

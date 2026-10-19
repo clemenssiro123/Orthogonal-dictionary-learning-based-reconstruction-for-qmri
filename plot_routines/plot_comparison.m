@@ -1,35 +1,23 @@
-function zoom_box = export_reconstruction_comparison(truth,reconstructions,mask,method_names,design,path,append) % Write or append the portrait comparison page to path and return the chosen crop.
-%EXPORT_RECONSTRUCTION_COMPARISON Map/error grid with linked zoom insets.
-% MATLAB R2021b. Display only: no interpolation toolbox or solver rerun needed.
-% Columns are ground truth followed by the reconstruction methods. Each
-% parameter has a map row and an absolute-error row, with one colorbar per row.
+function [fig,zoom_box] = plot_comparison(results,design)
+%PLOT_COMPARISON Map/error comparison with linked zoom insets.
+% [FIG,ZOOM_BOX] = PLOT_COMPARISON(RESULTS,DESIGN)
+% RESULTS is a loaded results structure, MAT filename, or saved-run folder.
+% It supplies truth, reconstructions, mask, method_names and saved design.
+% Maps have size N-by-M-by-3 in physical [T1(ms),T2(ms),Density] units;
+% N-by-M single-image maps are also supported by this comparison grid.
+% Optional DESIGN overrides selected saved display fields. ShowFigures
+% controls visibility; ZeroBackground masks display copies only.
+% FIG is an editable figure. ZOOM_BOX is the actual inclusive crop
+% [first_row last_row first_column last_column] on the reconstruction grid.
+% No file is written and no solver is run. MATLAB R2021b.
 %
-% Uses the demo's MapColors, MapLimits, ErrorColors, ErrorLimits, FontName,
-% FontSize, ShowFigures, ZeroBackground and Resolution fields. Optional:
-%   ZoomBox               [first_row last_row first_col last_col], inclusive,
-%                         on the reduced reconstruction grid. [] selects a
-%                         lower-left region within the body's bounding box.
-%   ZoomInsetFraction     Maximum inset side / map side (default .43).
-%   ZoomColor             ROI, connector and inset border RGB (default red).
-%   ComparisonFigureSize  Portrait figure size in pixels (default [1100 1320]).
-% APPEND defaults to false; true adds the comparison to an existing PDF.
-% Returns the actual ZoomBox used so automatic selections can be reproduced.
-% TRUTH and each cell of RECONSTRUCTIONS have size N-by-M-by-3, with
-% channels [T1,T2,rho] in physical units. MASK is an N-by-M logical body mask.
-% N-by-M single-image inputs are also supported, with one map/error row pair.
-% DESIGN controls presentation; PATH is the destination PDF filename.
-% All columns use the same crop and each row uses the same color scale,
-% so differences between methods remain directly comparable.
-%
-% Replot a saved run without recomputing any reconstruction:
-%   s=load(fullfile(run_folder,'results.mat'));
-%   s.design.ShowFigures=false;
-%   export_reconstruction_comparison(s.truth,s.reconstructions,s.mask, ...
-%       s.method_names,s.design,fullfile(run_folder,'comparison_with_zooms.pdf'));
-
+% Example: fig=plot_comparison(s,struct('ShowFigures',true));
+% See also PLOT_PARAMETER_MAPS, EXPORT_RECONSTRUCTION_COMPARISON.
+    if nargin<2, design=[]; end
+    [results,design]=comparison_plot_inputs(results,design);
+    truth=results.truth; reconstructions=results.reconstructions; mask=results.mask;
+    method_names=results.method_names;
     %% 1. Fill optional display settings and check compatible input sizes
-    % nargin counts supplied inputs; omitting APPEND starts a new PDF.
-    if nargin<7, append=false; end % Start a new PDF by default when the optional append argument is omitted.
     % Only fill missing options; explicitly supplied settings take precedence.
     if ~isfield(design,'ComparisonFigureSize'), design.ComparisonFigureSize=[1100 1320]; end % Use the default portrait figure size when an older design lacks this field.
     [n,m,channels]=size(truth); % Read the reference image height, width and number of parameter channels.
@@ -130,7 +118,7 @@ function zoom_box = export_reconstruction_comparison(truth,reconstructions,mask,
             end
         end
     end
-    %% 6. Record the crop coordinates and write or append the PDF page
+    %% 6. Record the crop coordinates
     % The footer records both the crop and whether the body mask was displayed.
     background='Background shown'; % Prepare the footer statement for an unmasked display.
     if design.ZeroBackground, background='Background masked for display'; end % Replace that statement when the displayed background has been zeroed.
@@ -140,6 +128,4 @@ function zoom_box = export_reconstruction_comparison(truth,reconstructions,mask,
     annotation(fig,'textbox',[.045 .006 .94 .03],'String',caption, ... % Place the footer in a textbox along the bottom of the page.
         'EdgeColor','none','FontName',design.FontName,'FontSize',design.FontSize-1, ... % Remove its border and use the configured font with a slightly smaller size.
         'Interpreter','none','VerticalAlignment','middle','HorizontalAlignment','center'); % Render literal text and center the footer within its textbox.
-    % The shared exporter protects preceding pages and closes hidden figures.
-    export_reconstruction_pdf(fig,path,design,append);
 end

@@ -1,5 +1,14 @@
 function [pdf_paths,zoom_box] = export_reconstruction_rows(truth,reconstructions,initialization,mask,method_names,design,output_folder) % Write compact PDFs and return their paths and shared zoom box.
 %EXPORT_RECONSTRUCTION_ROWS Compact, single-page PDFs (MATLAB R2021b).
+% [PDF_PATHS,ZOOM_BOX] = EXPORT_RECONSTRUCTION_ROWS(TRUTH,RECONSTRUCTIONS, ...
+%     INITIALIZATION,MASK,METHOD_NAMES,DESIGN,OUTPUT_FOLDER)
+% TRUTH and each reconstruction cell are N-by-M-by-3 physical maps
+% [T1(ms),T2(ms),Density], or N-by-M single images. INITIALIZATION has the
+% same size or is empty. MASK is N-by-M; names follow reconstruction order.
+% DESIGN is a complete display structure. The destination is created when
+% missing. PDF_PATHS lists written files; ZOOM_BOX is the inclusive crop
+% [first_row last_row first_column last_column] on the reconstructed grid.
+%
 % Six files compare T1, T2 and Density maps and absolute errors. Each contains
 % one row: ground truth, then RECONSTRUCTIONS in METHOD_NAMES order. The demo
 % supplies BLIP, LM, one-step DL and nested DL. The truth error is zero.

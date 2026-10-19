@@ -13,6 +13,7 @@ close all;
 rng(1);
 % Locate data and helpers relative to this script's own folder.
 root=fileparts(mfilename('fullpath'));
+addpath(fullfile(root,'plot_routines'));
 addpath(fullfile(root,'bloch_simulations'),fullfile(root,'helper_functions'));
 
 %% Input: change the file and physical ranges here
@@ -223,34 +224,8 @@ method_names={'LM'};
 export_reconstruction_report(truth,{reconstruction},reference_start,mask, ...
     method_names,design,output_folder);
 
-%% 6. Data residual, successive-iterate change and background density
-% Include iteration zero. realmin avoids log(0) in plots without changing histories.
-fig=reconstruction_report_figure('Projected LM: convergence',design);
-tiledlayout(1,3,'TileSpacing','compact','Padding','compact');
-nexttile; semilogy(0:info.iterations,max(info.data_residual_norm,realmin),'LineWidth',design.LineWidth);
-if use_discrepancy && info.discrepancy_threshold>0
-    hold on; yline(info.discrepancy_threshold,'k--','tau*delta');
-end
-grid on; xlabel('Update'); ylabel('Residual norm'); title('Measured data and noise threshold');
-nexttile; semilogy(1:info.iterations,max(info.step_norm_absolute,realmin),'LineWidth',design.LineWidth);
-grid on; xlabel('Completed update'); ylabel('Absolute physical L2 norm'); title('Successive map change');
-nexttile; plot(0:info.iterations,info.background_rms(:,3),'LineWidth',design.LineWidth);
-grid on; xlabel('Update'); ylabel('RMS density'); title('Density leaking into background');
+%% 6. Convergence and solver diagnostics (independently callable plot routines)
+fig=plot_lm_convergence(info,design);
 export_reconstruction_pdf(fig,fullfile(output_folder,'convergence.pdf'),design);
-
-%% 7. Scheduled damping, linear accuracy and the effect of projection
-% These histories have one value per completed update. Linear residuals are
-% measured before clipping; step norms use the actual increment after clipping.
-fig=reconstruction_report_figure('Projected LM: solver diagnostics',design);
-tiledlayout(2,2,'TileSpacing','compact','Padding','compact');
-nexttile; semilogy(1:info.iterations,info.damping,'LineWidth',design.LineWidth);
-grid on; xlabel('Update'); ylabel('Lambda'); title('Scheduled damping');
-nexttile; semilogy(1:info.iterations,max(info.linear_relative_residual,realmin),'LineWidth',design.LineWidth);
-hold on; yline(linear_tolerance,'k--'); grid on;
-xlabel('Update'); ylabel('Relative residual'); title('Linear system before projection');
-nexttile; plot(1:info.iterations,100*info.projection_fraction,'LineWidth',design.LineWidth);
-grid on; xlabel('Update'); ylabel('Percent of entries'); title('Entries clipped to bounds');
-nexttile; semilogy(1:info.iterations,max(info.step_norm,realmin),'LineWidth',design.LineWidth);
-grid on; xlabel('Update'); ylabel('Relative step'); title('Actual step after projection');
-
+fig=plot_lm_convergence(info,design,'diagnostics');
 export_reconstruction_pdf(fig,fullfile(output_folder,'convergence.pdf'),design,true);

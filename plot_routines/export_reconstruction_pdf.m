@@ -1,8 +1,17 @@
 function export_reconstruction_pdf(fig,path,design,append)
-%EXPORT_RECONSTRUCTION_PDF Write a report page using the comparison-demo style.
-% MATLAB R2021b. Retry vector-renderer failures on a fresh hidden figure,
+%EXPORT_RECONSTRUCTION_PDF Write a figure as one report page.
+% EXPORT_RECONSTRUCTION_PDF(FIG,PATH,DESIGN,APPEND)
+% FIG must be a live figure. PATH names a PDF in an existing folder.
+% DESIGN supplies ShowFigures and Resolution (DPI for raster fallback).
+% APPEND defaults to false, replacing PATH. True adds a page to an existing
+% PDF, or creates the first page if PATH does not yet exist.
+% With ShowFigures=false, this function closes FIG on exit; otherwise FIG
+% remains available for editing. Numerical arrays are not modified.
+%
+% MATLAB R2021b: retry vector-renderer failures on a fresh hidden figure,
 % then use an image page if needed. Commit the PDF only after a successful
 % export, so a failed append cannot damage the preceding pages.
+% See also EXPORT_COMPARISON_REPORTS, PLOT_CONVERGENCE.
     if nargin<4, append=false; end
     assert(isgraphics(fig,'figure'),'The report figure must still exist.');
     if ~design.ShowFigures, cleanup=onCleanup(@() close_if_valid(fig)); end

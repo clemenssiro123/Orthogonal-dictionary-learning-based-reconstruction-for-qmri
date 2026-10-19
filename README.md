@@ -49,6 +49,7 @@ The eight compact PDFs are exported without opening figure windows by default (`
 To generate only the eight compact PDFs from an existing experiment, without rerunning the solvers:
 
 ```matlab
+addpath(fullfile(pwd,'plot_routines')); % Once per MATLAB session.
 run_folder = fullfile(pwd,'data','comparison_all_<timestamp>'); % Choose your saved run.
 s = load(fullfile(run_folder,'results.mat'));
 s.design.ShowFigures = false;
@@ -57,6 +58,72 @@ s.design.ShowFigures = false;
 ```
 
 This replaces any compact PDFs with the same filenames; the saved `results.mat` and four existing reports are unchanged. Missing compact-layout settings in older runs use the defaults.
+
+### Plotting saved results independently
+
+All drawing and PDF-export functions live in [`plot_routines/`](plot_routines/). The demos add this folder to the MATLAB path automatically. For a new MATLAB session, run the examples below from the project folder. Replace `comparison_all_<timestamp>` with the name of an existing saved run; these examples require its `results.mat` file.
+
+**Minimal example: reload one run and display only its comparison figure.**
+
+```matlab
+addpath(fullfile(pwd,'plot_routines'));
+run_folder = fullfile(pwd,'data','comparison_all_<timestamp>');
+s = load(fullfile(run_folder,'results.mat'));
+
+plot_options = struct('ShowFigures',true); % Also show runs originally exported hidden.
+fig = plot_comparison(s,plot_options);
+```
+
+To display a single convergence plot instead, replace the last line with **one** of these calls:
+
+```matlab
+fig = plot_convergence(s,'residual',plot_options);          % All four methods.
+fig = plot_convergence(s,'map-change',plot_options);        % Both DL methods.
+fig = plot_convergence(s,'dictionary-change',plot_options); % Both DL methods.
+```
+
+Each call creates one figure without rerunning reconstruction or writing a file. The returned `fig` can be edited, exported, or closed with `close(fig)`.
+
+The comparison plot functions also accept a `results.mat` filename or its containing run folder instead of `s`. Their optional last argument overrides fields in the saved `design`; for example, `struct('ShowFigures',true,'ZoomBox',[30 50 40 60])`. Each call returns an editable figure handle and leaves the numerical results unchanged.
+
+| Function | Figure |
+| --- | --- |
+| `plot_comparison(s)` | Original portrait map/error comparison with linked zoom insets. |
+| `plot_parameter_maps(s)` | Ground truth, coarse-BLIP initialization and all four reconstructed maps. |
+| `plot_parameter_errors(s)` | Absolute errors and final relative body errors. |
+| `plot_parameter_profiles(s)` | Profiles through `design.ProfileRow`, or the middle row. |
+| `plot_parameter_zoom(s)` | Enlarged maps for the selected or automatic crop. |
+| `plot_experiment_summary(s)` | Original experiment settings, timings, errors and stopping reasons. |
+| `plot_convergence(s,quantity)` | One selected curve or one complete convergence-report page. |
+
+For a single convergence axes, `quantity` can be `'residual'`, `'residual-time'`, `'objective'`, `'map-change'`, `'dictionary-change'`, `'inner-iterations'`, `'qp-optimality'`, `'t1-error'`, `'t2-error'`, or `'density-error'`. Objective, map-change, dictionary-change, inner-work and QP plots compare the two DL methods. The map-change norm is the configured solver norm. State curves include iteration zero; change/work curves start at update one.
+
+The choices `'fit'`, `'errors'`, and `'dictionary'` recreate the three original convergence-report pages. To save a selected figure or rebuild all twelve PDF files:
+
+```matlab
+design = s.design;
+design.ShowFigures = true;
+fig = plot_convergence(s,'map-change',design);
+export_reconstruction_pdf(fig,fullfile(run_folder,'map_change.pdf'),design);
+% Optional: savefig(fig,fullfile(run_folder,'map_change.fig'));
+
+% Recreate all four reports and eight compact PDFs in a separate folder.
+% Existing PDFs with matching names in the destination are replaced.
+export_comparison_reports(s,fullfile(run_folder,'replots'), ...
+    struct('ShowFigures',false));
+```
+
+The full exporter preserves the original page order, map/error color limits, masks used for display, zooms, profiles, summaries, and hidden-figure cleanup. It is also the exporter called by the four-method demo after saving `results.mat`.
+
+Standalone demos call `plot_lm_convergence`, `plot_nested_convergence`, `plot_dictionary_comparison`, or `plot_dictionary_learning_convergence` with their own histories and display settings. These functions also return figures without exporting. Their `design` argument is a complete display structure, such as `s.design`, whereas the saved-comparison functions above also accept partial overrides. The standalone demos still leave numerical results in the workspace rather than automatically saving them.
+
+The function headers describe inputs, outputs, plot choices, units, and display/export behavior. After adding the plotting folder to the path, use MATLAB's built-in help, for example:
+
+```matlab
+help plot_convergence
+help plot_nested_convergence
+help export_comparison_reports
+```
 
 For the supplied input, `pixel_stride = 1` uses the full 256 x 256 resolution; this requires substantially more computation. The undersampling factor `r` must divide the reconstructed image's row count.
 
@@ -216,7 +283,7 @@ disp(nested_history.stop_reason);
 | `saved_histories`, `saved_options` | Per-method histories and the options actually passed to each solver. State histories include iteration zero; completed-update histories start at update one. |
 | `initial_history`, `initial_options`, `experiment`, `design` | Coarse-BLIP diagnostics/settings, acquisition and coordinate settings, and plot design. |
 
-The MAT file is saved **before PDF export**, so numerical results remain available if plotting fails. It does not contain the noisy measurement array, RF vector, or final DL dictionaries/coefficients; retain and save those explicitly if needed. The compact-PDF example above redraws its eight files from saved results; it does not rebuild the convergence or summary reports.
+The MAT file is saved **before PDF export**, so numerical results remain available if plotting fails. It does not contain the noisy measurement array, RF vector, or final DL dictionaries/coefficients; retain and save those explicitly if needed. Use `export_comparison_reports` to rebuild all reports, or the individual plotting functions above to draw selected figures. The compact-PDF example exports only its eight files.
 
 ### Interpreting the results
 
@@ -237,7 +304,7 @@ These are the most common reasons; optional small-step tests and LM's projection
 
 ### Plot reports
 
-The other demos use the same plot style: shared map/error color limits, linked zoom insets, compact PDF rows, and profile reports. They export to a new time-stamped folder under `data/demo_reports/`. Edit each demo's `design` settings to choose the zoom, profile row, background display, or figure visibility; the common defaults are in `reconstruction_plot_design.m`. Convergence PDFs show successive-iterate changes in place of projected-gradient stationarity plots. DL reports show separate absolute map and combined `(D,C)` changes, with dotted stopping-tolerance lines. LM shows the physical L2 change as a diagnostic while retaining projected-gradient stopping. Change histories begin at the first completed update. The denoising demo exports a single image channel, while legacy BLIP omits initialization and convergence reports because its interface does not return those quantities.
+The other demos use the same plot style: shared map/error color limits, linked zoom insets, compact PDF rows, and profile reports. They export to a new time-stamped folder under `data/demo_reports/`. Edit each demo's `design` settings to choose the zoom, profile row, background display, or figure visibility; the common defaults are in [`plot_routines/reconstruction_plot_design.m`](plot_routines/reconstruction_plot_design.m). Convergence PDFs show successive-iterate changes in place of projected-gradient stationarity plots. DL reports show separate absolute map and combined `(D,C)` changes, with dotted stopping-tolerance lines. LM shows the physical L2 change as a diagnostic while retaining projected-gradient stopping. Change histories begin at the first completed update. The denoising demo exports a single image channel, while legacy BLIP omits initialization and convergence reports because its interface does not return those quantities.
 
 PDF export normally uses vector graphics. If MATLAB's vector renderer fails, `export_reconstruction_pdf.m` retries on a fresh hidden figure, then falls back to an image page at `design.Resolution` DPI with a warning if necessary; existing PDF pages are preserved when an export fails.
 

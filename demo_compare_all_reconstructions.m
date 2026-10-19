@@ -11,6 +11,7 @@
 clearvars;
 close all;
 root=fileparts(mfilename('fullpath'));
+addpath(fullfile(root,'plot_routines'));
 % Resolve the helper folders relative to this script, independent of the current folder.
 addpath(fullfile(root,'helper_functions'),fullfile(root,'bloch_simulations'));
 
@@ -254,202 +255,14 @@ save(fullfile(output_folder,'results.mat'),'truth','mask','u0','reconstructions'
     'saved_histories','saved_options','initial_options','initial_history','comparison', ...
     'rmse','experiment','design','method_names');
 
-%% 7. Map and absolute-error PDFs (equal color limits within each row)
-% First page: truth, common start and four results. Second page: linked zooms.
-% All displays operate on copies, and color saturation does not clip stored values.
-map_names={'T1 (ms)','T2 (ms)','Density'};
-fig=new_figure('Parameter maps',design); tiledlayout(3,6,'TileSpacing','compact','Padding','compact');
-shown=[{truth,u0} reconstructions]; headings=[{'Truth','Coarse BLIP start'} method_names];
-for j=1:3
-    for column=1:6
-        ax=nexttile;
-        show_map(ax,shown{column}(:,:,j),mask,design.MapLimits(j,:),design.MapColors{j},design);
-        title(sprintf('%s\n%s',headings{column},map_names{j}));
-        if column==6, colorbar; end
-    end
-end
-sgtitle(sprintf('Shared start | %dx%d, L=%d, r=%d, noise SD=%.2g per component',n,m,L,r,noise_std));
-export_pdf(fig,fullfile(output_folder,'maps.pdf'),design,false);
-% Publication-style grid: truth and all methods, alternating map/error rows.
-export_reconstruction_comparison(truth,reconstructions,mask,method_names, ...
-    design,fullfile(output_folder,'maps.pdf'),true);
-% Six standalone comparison rows plus initialization maps/errors (three panels each).
-% Same scales, background masking and linked zooms as the portrait comparison.
-export_reconstruction_rows(truth,reconstructions,u0,mask,method_names,design,output_folder); % Create the eight compact PDFs here, using u0 for the two initialization pages.
-
-fig=new_figure('Absolute reconstruction errors',design);
-% Absolute errors are in ms for T1/T2 and the density map's original units.
-tiledlayout(3,4,'TileSpacing','compact','Padding','compact');
-for j=1:3
-    for method=1:4
-        ax=nexttile;
-        show_map(ax,abs(reconstructions{method}(:,:,j)-truth(:,:,j)),mask, ...
-            design.ErrorLimits(j,:),design.ErrorColors,design);
-        title(sprintf('%s | %s\nBody error %.2f%%',method_names{method},map_names{j},relative_error(method,j)));
-        if method==4, colorbar; end
-    end
-end
-sgtitle('Absolute errors in physical units; common limits per row (larger errors saturate)');
-export_pdf(fig,fullfile(output_folder,'errors.pdf'),design,false);
-
-%% 8. Convergence PDF: residuals, reconstruction accuracy, dictionary work
-% Append three pages to one PDF: fit/runtime, body errors, and DL diagnostics.
-% Curves of states start at zero; curves of accepted-step work start at one.
-convergence_pdf=fullfile(output_folder,'convergence.pdf');
-fig=new_figure('Data fit and runtime',design); tiledlayout(2,2,'TileSpacing','compact');
-for panel=1:2
-    % Use iteration count in panel 1 and elapsed solver time in panel 2.
-    nexttile; hold on;
-    for method=1:4
-        state=histories{method}; horizontal=0:state.iterations;
-        if panel==2, horizontal=state.time; end
-        draw_curve(horizontal,state.comparison_residual,method,design);
-    end
-    if noise_norm>0, yline(noise_norm,':k','Actual noise norm','HandleVisibility','off'); end
-    set(gca,'YScale','log'); grid on; ylabel('Measured residual norm');
-    if panel==1, xlabel('Completed step'); else, xlabel('Solver seconds (including setup)'); end
-    title('Same data-fit quantity for all methods'); legend(method_names,'Location','best');
-end
-nexttile; bar([seconds initial_seconds*ones(4,1)],'stacked');
-% The stacked bars distinguish work unique to a method from the common start.
-set(gca,'XTick',1:4,'XTickLabel',method_names); ylabel('Seconds'); grid on;
-legend({'Solver + its setup','Shared coarse initialization'},'Location','best'); title('Single-run time costs');
-nexttile; bar(background_density); set(gca,'XTick',1:4,'XTickLabel',method_names);
-ylabel('RMS density outside body'); grid on; title('Background leakage (unmasked reconstruction)');
-sgtitle('Data fit and computational cost; iteration costs differ across methods');
-export_pdf(fig,convergence_pdf,design,false);
-
-fig=new_figure('Errors over iterations and time',design); tiledlayout(2,3,'TileSpacing','compact');
-% MonitorFcn stored three body errors at every state; plot them without rerunning solvers.
-for row=1:2
-    for j=1:3
-        nexttile; hold on;
-        for method=1:4
-            state=histories{method}; horizontal=0:state.iterations;
-            if row==2, horizontal=state.time; end
-            draw_curve(horizontal,state.monitor(:,j),method,design);
-        end
-        grid on; title(map_names{j}); ylabel('Relative body error (%)');
-        if row==1, xlabel('Completed step'); else, xlabel('Solver seconds (including setup)'); end
-        if j==1, legend(method_names,'Location','best'); end
-    end
-end
-sgtitle('Reconstruction quality, including the common initial maps at step zero');
-export_pdf(fig,convergence_pdf,design,true);
-
-fig=new_figure('Dictionary convergence',design); tiledlayout(3,2,'TileSpacing','compact');
-% Full objectives are comparable between the DL methods only for equal prior weights.
-% Iterate-change histories start at one; dotted lines mark stopping tolerances.
-for panel=1:5
-    if panel==1, nexttile([1 2]); else, nexttile; end
-    hold on;
-    for method=3:4
-        state=histories{method}; horizontal=0:state.iterations;
-        switch panel
-            case 1, vertical=state.objective; label='Full regularized objective';
-            case 2
-                horizontal=1:state.iterations; vertical=state.step_norm;
-                label='Successive map change (solver norm)';
-            case 3
-                horizontal=1:state.iterations; vertical=state.dictionary_step_norm;
-                label='Successive D,C change (combined Frobenius norm)';
-            case 4
-                horizontal=1:state.iterations; vertical=sum(state.inner_iterations,2);
-                label='D/C pairs per outer step (sum over maps)';
-            case 5
-                horizontal=1:state.iterations; vertical=state.qp_firstorderopt;
-                label='QP first-order optimality';
-        end
-        draw_curve(horizontal,max(vertical,eps),method,design);
-        if panel==2 || panel==3
-            tolerance=method_options{method}.MapTolerance;
-            if panel==3, tolerance=method_options{method}.DictionaryTolerance; end
-            if tolerance>0
-                yline(tolerance,':','Color',design.MethodColors(method,:),'HandleVisibility','off');
-            end
-        end
-    end
-    set(gca,'YScale','log'); grid on; xlabel('Completed step'); title(label);
-    legend(method_names(3:4),'Location','best');
-end
-sgtitle('DL diagnostics: absolute iterate changes; dotted lines mark stopping tolerances');
-export_pdf(fig,convergence_pdf,design,true);
-
-%% 9. Profiles and a compact numerical/settings summary
-% Profiles compare one image row. An explicit ZoomBox also adds a crop page;
-% the final page records settings and actual stopping reasons alongside errors.
-profiles_pdf=fullfile(output_folder,'profiles_and_summary.pdf');
-if isempty(design.ProfileRow), design.ProfileRow=round(n/2); end
-row=design.ProfileRow;
-fig=new_figure('Parameter profiles',design); tiledlayout(1,3,'TileSpacing','compact');
-for j=1:3
-    nexttile; hold on; target=truth(:,:,j);
-    if design.ZeroBackground, target(~mask)=0; end
-    plot(1:m,target(row,:),'k:','LineWidth',2);
-    for method=1:4
-        values=reconstructions{method}(:,:,j);
-        if design.ZeroBackground, values(~mask)=0; end
-        draw_curve(1:m,values(row,:),method,design);
-    end
-    grid on; xlabel('Column'); ylabel(map_names{j}); title(sprintf('Row %d',row));
-    if j==1, legend([{'Truth'} method_names],'Location','best'); end
-end
-sgtitle('Physical parameter profiles (display background follows design.ZeroBackground)');
-export_pdf(fig,profiles_pdf,design,false);
-if ~isempty(design.ZoomBox)
-    % Rows/columns refer to the reduced reconstruction grid and include both endpoints.
-    box=design.ZoomBox; rows=box(1):box(2); columns=box(3):box(4);
-    fig=new_figure('Enlarged parameter maps',design); tiledlayout(3,5,'TileSpacing','compact');
-    shown=[{truth} reconstructions]; headings=[{'Truth'} method_names];
-    for j=1:3
-        for column=1:5
-            ax=nexttile;
-            show_map(ax,shown{column}(rows,columns,j),mask(rows,columns), ...
-                design.MapLimits(j,:),design.MapColors{j},design);
-            title([headings{column} ' | ' map_names{j}]); if column==5, colorbar; end
-        end
-    end
-    sgtitle(sprintf('Zoom: rows %d-%d, columns %d-%d',box));
-    export_pdf(fig,profiles_pdf,design,true);
-end
-fig=new_figure('Experiment summary',design); ax=axes(fig,'Position',[.04 .04 .92 .9]); axis(ax,'off');
-lines_out={sprintf('FOUR-METHOD COMPARISON | %dx%d | L=%d | r=%d | noise SD=%.3g | seed=%d',n,m,L,r,noise_std,seed), ...
-    sprintf('TR=%.3g ms; scales=[%g %g %g]; references=[%g %g]; h=%g',TR_ms,scales,reference_times,h), ...
-    sprintf('Common coarse BLIP: %d x %d candidates; %d accepted / %d trials; %.2f s; mask applied=%d', ...
-    numel(coarse_T1),numel(coarse_T2),initial_history.iterations,initial_history.total_trials,initial_seconds,initial_use_body_mask), ...
-    ' ', 'Method       Steps  Solve(s)  Total(s)    T1(%)   T2(%)  Density(%)   Residual   Background rho RMS'};
-for method=1:4
-    lines_out{end+1}=sprintf('%-12s %4d %9.2f %9.2f %8.2f %7.2f %11.2f %10.3g %12.3g', ...
-        method_names{method},iterations(method),seconds(method),total_seconds(method), ...
-        relative_error(method,:),residual_norm(method),background_density(method));
-end
-lines_out=[lines_out {' ','Stopping reasons (a budget or failed inner solve does not certify convergence):'}];
-for method=1:4
-    lines_out{end+1}=sprintf('%-12s %s',method_names{method},stop_reason{method});
-end
-lines_out=[lines_out {' ',sprintf('BLIP: %d x %d candidates, max steps=%d; LM: %s GN, max steps=%d, damping=%g * %g^k', ...
-    numel(blip_options.T1Grid),numel(blip_options.T2Grid),blip_options.MaxIterations, ...
-    lm_options.GaussNewton,lm_options.MaxIterations,lm_options.InitialDamping,lm_options.DampingDecay)}];
-for method=3:4
-    o=method_options{method};
-    lines_out{end+1}=sprintf('%s: alpha=%g; lambda=[%g %g %g]; beta=[%g %g %g]; patch=%dx%d; max steps=%d', ...
-        method_names{method},o.Alpha,o.Lambda,o.Beta,o.PatchSize,o.MaxIterations);
-    lines_out{end+1}=sprintf('  %s GN; %s step norm; QP tolerances (opt/function/PCG)=[%g %g %g]', ...
-        o.GaussNewton,o.StepNorm,o.QPOptimalityTolerance,o.QPFunctionTolerance,o.QPPCGTolerance);
-end
-lines_out=[lines_out {sprintf('Nested eta: %.4g * ||(D0,C0)|| / (k+1)^%.3g; inner cap=%d', ...
-    nested_options.InnerToleranceScale,nested_options.InnerDecay,nested_options.InnerMaxIterations), ...
-    ' ', 'Errors use body pixels; background density RMS uses the unmasked output.', ...
-    'Map/profile background masking is for display only. Full settings and RMSE are in results.mat.', ...
-    'Full DL objectives include regularizers; BLIP/LM use data fit only. Compare their residuals above.', ...
-    'Times are one run each and include monitoring/setup. Common initialization is added in Total(s).'}];
-% Interpreter none preserves literal underscores and option names in the report.
-text(ax,0,1,lines_out,'VerticalAlignment','top','Interpreter','none', ...
-    'FontName',design.ReportFontName,'FontSize',design.ReportFontSize);
-export_pdf(fig,profiles_pdf,design,true);
+%% 7. Plot/export the saved results; each figure is also callable separately
+% Loading the saved structure exercises the same interface used for later replotting.
+% Examples: plot_comparison(results), plot_convergence(results,'map-change').
+export_comparison_reports(fullfile(output_folder,'results.mat'),output_folder);
 fprintf('\nPDFs and results saved in:\n%s\n',output_folder);
 
-%% Small plotting/evaluation helpers; none changes the reconstructed maps
+%% Evaluation helper used by solver monitoring
+
 function errors=body_errors(u,truth,mask)
     % Relative L2 errors on foreground pixels only; eps guards a zero reference norm.
     errors=zeros(1,3);
@@ -457,31 +270,4 @@ function errors=body_errors(u,truth,mask)
         target=truth(:,:,j); difference=u(:,:,j)-target;
         errors(j)=100*norm(difference(mask))/max(norm(target(mask)),eps);
     end
-end
-
-function fig=new_figure(name,design) % Create a figure for the existing multi-page reports; writing happens in export_pdf below.
-    % Apply the same geometry/fonts to each report page; off still allows PDF export.
-    visible='off'; if design.ShowFigures, visible='on'; end % Hide report windows unless ShowFigures requests an on-screen display.
-    fig=figure('Name',name,'Color','w','Visible',visible, ... % Create a named white figure with the chosen visibility.
-        'Position',[40 40 design.FigureSize],'DefaultAxesFontName',design.FontName, ... % Apply the configured screen position/size and axes font family.
-        'DefaultAxesFontSize',design.FontSize,'DefaultTextFontName',design.FontName, ... % Set the axes font size and text font family for later plot elements.
-        'DefaultTextFontSize',design.FontSize); % Set the default text font size for the new report figure.
-end
-
-function show_map(ax,values,mask,limits,colors,design) % Draw one parameter/error image in the existing report grid.
-    % values is a plotting copy; masking and intensity limits leave solver maps untouched.
-    if design.ZeroBackground, values(~mask)=0; end % Optionally zero the displayed background without changing the original maps.
-    imagesc(ax,values,limits); axis(ax,'image'); axis(ax,'off'); colormap(ax,colors); % Apply the numeric scale, preserve square pixels, hide axes and set this image's colormap.
-end
-
-function draw_curve(x,y,method,design) % Draw a convergence/profile curve using this method's consistent visual style.
-    % Reuse each method's color/style across every convergence and profile panel.
-    plot(x,y,'Color',design.MethodColors(method,:),'LineStyle',design.LineStyles{method}, ... % Plot the supplied x/y samples with the method's color and line pattern.
-        'LineWidth',design.LineWidth); % Use the common configured line thickness.
-end
-
-function export_pdf(fig,path,design,append) % Write one existing report page to path, optionally appending it to earlier pages.
-    % Shared exporter retries MATLAB vector-renderer failures and protects
-    % preceding pages when appending to an existing report.
-    export_reconstruction_pdf(fig,path,design,append);
 end

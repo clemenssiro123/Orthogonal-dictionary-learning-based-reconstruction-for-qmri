@@ -1,9 +1,20 @@
 function export_reconstruction_report(truth,reconstructions,initialization,mask,method_names,design,output_folder)
 %EXPORT_RECONSTRUCTION_REPORT Common maps, errors, compact rows and profiles.
-% MATLAB R2021b. Uses the exporters from demo_compare_all_reconstructions.
-% Arrays contain either [T1,T2,Density] or one image. INITIALIZATION may be []
-% when the solver does not return initial parameter maps (legacy BLIP).
-% Convergence diagnostics are exported separately by each demo.
+% EXPORT_RECONSTRUCTION_REPORT(TRUTH,RECONSTRUCTIONS,INITIALIZATION,MASK, ...
+%     METHOD_NAMES,DESIGN,OUTPUT_FOLDER)
+% TRUTH and each reconstruction cell contain N-by-M-by-3 physical maps
+% [T1(ms),T2(ms),Density], or N-by-M single images. MASK is N-by-M, and
+% METHOD_NAMES follows the reconstruction order. INITIALIZATION has the same
+% map size, or [] when no initial maps are available (legacy BLIP).
+% DESIGN is a complete structure from reconstruction_plot_design or a saved
+% run. It controls colors, scales, display masking, zooms, profiles and fonts.
+% OUTPUT_FOLDER is created if needed; PDFs with matching names are replaced.
+% ShowFigures=false closes hidden figures after export. Stored maps remain
+% unchanged, and scalar errors are computed on MASK pixels before display.
+% Convergence diagnostics are exported separately by each standalone demo.
+% For the full saved four-method report, use EXPORT_COMPARISON_REPORTS.
+% MATLAB R2021b.
+% See also EXPORT_COMPARISON_REPORTS, EXPORT_RECONSTRUCTION_ROWS.
     [n,m,channels]=size(truth);
     assert(any(channels==[1 3]) && n>=2 && m>=2,'Provide one image or three parameter maps.');
     assert(isequal(size(mask),[n m]),'Mask and maps must have the same size.');
