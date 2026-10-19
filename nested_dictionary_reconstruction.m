@@ -55,6 +55,9 @@ function [u,D,C,info] = nested_dictionary_reconstruction(data,RF,TR,r,zeta,u0,op
     addpath(fullfile(root,'helper_functions'),fullfile(root,'bloch_simulations'));
 
     %% 1. Settings: choose nested or one-step dictionary learning
+    % Fill omitted options and check the input geometry before allocating the
+    % reconstruction arrays. All three dictionary-update modes use the same
+    % map QP and acceptance test; only the work inside the z-step changes.
     settings=read_options(options,data,RF,TR,r,zeta,u0);
     inner_rule=settings.InnerStopRule;
     inner_limit=settings.InnerMaxIterations;
@@ -70,6 +73,9 @@ function [u,D,C,info] = nested_dictionary_reconstruction(data,RF,TR,r,zeta,u0,op
     RF=RF(:).'; TR=TR(:).'; zeta=zeta(:).'; % .' preserves complex RF phases.
 
     %% 2. Scale physical maps and translate the physical bounds
+    % The optimization variables are dimensionless deviations from the
+    % reference maps. Data evaluation converts them back to physical units;
+    % the spatial and dictionary penalties act directly on these deviations.
     timer=tic;
     scale=reshape(settings.Scales,1,1,3); % One scale per channel, broadcast over pixels.
     offset=reshape([settings.ReferenceTimes 0],1,1,3); % Origin [T1ref,T2ref,0].
@@ -83,9 +89,15 @@ function [u,D,C,info] = nested_dictionary_reconstruction(data,RF,TR,r,zeta,u0,op
 
     %% 3. Build patch extraction, spatial regularization and the step metric
     % R acts on one vectorized map; counts gives each pixel's patch coverage.
+    % Its geometry depends only on image size, patch size and stride, so R
+    % is built once here and reused for all maps and all outer/inner trials.
+    % Later calls to create_data_matrix_fast extract new values with this R.
     [R,number_of_patches,counts]=create_R_matrix([n m],settings.PatchSize,1);
     patch_area=prod(settings.PatchSize); % Number of entries in a single patch.
     % theta_k(:)'*K_grad*theta_k(:) discretizes the summed gradient energy.
+    % kron(speye(3),...) places one zero-Dirichlet Laplacian on each map's
+    % diagonal block. The h^2 factor supplies the 2-D spatial integration
+    % weight; the Laplacian itself already contains the factor 1/h^2.
     K_grad=settings.H^2*kron(speye(3),-dirichlet_laplacian_matrix(n,m,settings.H));
     G_step=K_grad; % Algorithm 2: ||delta_theta||_H01^2 = delta_theta'*G_step*delta_theta.
     % The optional full H1 norm also measures the increment values themselves.
@@ -96,6 +108,9 @@ function [u,D,C,info] = nested_dictionary_reconstruction(data,RF,TR,r,zeta,u0,op
     regularizer_H=settings.Alpha*K_grad+spdiags(patch_diagonal(:),0,3*P,3*P);
 
     %% 4. Initialize an orthogonal dictionary and sparse coefficients per map
+    % Supplied D0/C0 are used as starting values. Missing values are built
+    % from the initial scaled maps: an uncentered patch second-moment matrix
+    % gives the orthogonal basis, and soft-thresholding gives its sparse codes.
     D_k=settings.D0;
     C_k=settings.C0;
     if isempty(D_k), D_k=zeros(patch_area,patch_area,3); end
@@ -116,6 +131,9 @@ function [u,D,C,info] = nested_dictionary_reconstruction(data,RF,TR,r,zeta,u0,op
     % ||z_0||_Z stays fixed even when the norms of later D/C iterates change.
 
     %% 5. Prepare data derivatives, the bounded QP solver and output histories
+    % This function handle binds the fixed measurements, pulse sequence and
+    % coordinate scaling. A call with one output evaluates only the data
+    % objective; requesting more outputs also builds the needed derivatives.
     data_model=@(z) qmri_data_objective(z,data,RF,TR,r,zeta,settings.Scales,settings.H,settings.ReferenceTimes);
     penalty=[]; % Prior/damping matrix used by the exact QP Hessian callback.
     [targets,sparsity_value]=patch_targets(D_k,C_k);
@@ -178,12 +196,18 @@ function [u,D,C,info] = nested_dictionary_reconstruction(data,RF,TR,r,zeta,u0,op
         % B. Algorithm 2, lines 6-11: u-step with candidate z_{k+1} fixed.
         % Equation (38): choose Lambda_k at the START of the current u-step.
         % Before this iteration accepts a step, lambda_k holds lambda_{k-1}.
+        % Try one damping level below the preceding accepted value, subject
+        % to the lower safeguard. If this trial fails, multiplication by tau
+        % returns to the preceding value when the safeguard was inactive.
         if k==0
             Lambda_k=Lambda_0;
         else
             Lambda_k=max(lambda_min,lambda_k/tau);
         end
         lambda_trial=Lambda_k; % Paper's running lambda; increase it after rejection.
+        % Refresh the shared patch targets for z_{k+1}. Both the baseline
+        % objective and every trial objective must use this same dictionary
+        % block; the data linearization still belongs to the current theta_k.
         [targets,sparsity_value]=patch_targets(D_kp1,C_kp1);
         [patch_value,patch_gradient]=patch_model(theta_k); % Patch-fit energy and derivative.
         % J_k_zkp1 = J(u_k,z_{k+1}), using the SAME new D/C as every candidate.
@@ -194,6 +218,9 @@ function [u,D,C,info] = nested_dictionary_reconstruction(data,RF,TR,r,zeta,u0,op
         base_H=Happrox+regularizer_H; % Approximate data curvature + exact prior curvature.
         step_lower=lower-theta_k(:); % Bounds constrain theta_k+d, hence subtract theta_k.
         step_upper=upper-theta_k(:);
+        % The QP unknown is an increment, so starting at zero means starting
+        % at the current feasible maps. This solver guess is separate from
+        % Lambda_k, which controls the quadratic penalty on that increment.
         qp_start=zeros(3*P,1); % The zero increment is feasible.
         success=false;
         for trial=1:settings.MaxBacktracking
@@ -216,6 +243,9 @@ function [u,D,C,info] = nested_dictionary_reconstruction(data,RF,TR,r,zeta,u0,op
                 qp_start=min(step_upper,max(step_lower,delta_theta)); % Warm-start retries.
             end
             % A positive exit flag alone may mean stagnation; optionally require optimality.
+            % These checks concern the quadratic subproblem only. A valid,
+            % accurate QP solution must still pass the nonlinear decrease
+            % test below before it can replace the current reconstruction.
             qp_accurate=~settings.QPRequireOptimality || qp_opt<=settings.QPOptimalityTolerance;
             if ~(valid && qp_exitflag>0 && qp_accurate)
                 lambda_trial=tau*lambda_trial; % Additional numerical QP safeguard.
@@ -230,6 +260,10 @@ function [u,D,C,info] = nested_dictionary_reconstruction(data,RF,TR,r,zeta,u0,op
             J_lambda_zkp1=trial_data+.5*settings.Alpha*(candidate'*(K_grad*candidate))+trial_patch+sparsity_value;
             % Algorithm 2, line 8 / equation (40):
             % J(u(lambda),z_{k+1}) <= J(u_k,z_{k+1}) - sigma_BT*lambda/2*||delta_theta||_G^2.
+            % Evaluate the original objective, including its constant L1
+            % term. Damping belongs to the QP model and the required decrease;
+            % it is not an extra term in J_lambda_zkp1. The eps allowance
+            % prevents rejection caused solely by objective roundoff.
             if isfinite(J_lambda_zkp1) && J_lambda_zkp1<=J_k_zkp1-(sigma_BT/2)*lambda_trial*theta_step_squared ...
                     +10*eps*max(1,abs(J_k_zkp1))
                 success=true;
@@ -275,6 +309,9 @@ function [u,D,C,info] = nested_dictionary_reconstruction(data,RF,TR,r,zeta,u0,op
     end
 
     %% 7. Return physical maps and trim histories to completed updates
+    % Failed attempts can update the last_* diagnostics, but do not add an
+    % accepted state. Keep one state row for the initial point plus one per
+    % completed update; step histories contain only the completed updates.
     for name=[state_fields {'background_rms','monitor'}]
         info.(name{1})=info.(name{1})(1:completed+1,:);
     end
@@ -287,10 +324,27 @@ function [u,D,C,info] = nested_dictionary_reconstruction(data,RF,TR,r,zeta,u0,op
     info.total_qp_trials=total_trials;
     info.elapsed_seconds=toc(timer);
 
+    % The five helpers below are NESTED functions: they can read variables
+    % from this reconstruction call without receiving them as arguments.
+    % In particular, exact_hessian reads data_product/penalty, patch_model
+    % reads targets, and record_state writes info. Their shared quantities
+    % are refreshed explicitly by the outer algorithm at the places above.
+    % The helper argument z denotes scaled maps, not the paper's z=(D,C).
+
     %% Helper: data-fit value, gradient and Gauss-Newton curvature at current theta_k
     function [value,gradient,local_hessian,product]=evaluate_data_model(z)
+        % Input z is n-by-m-by-3 in the same scaled coordinates as theta_k.
+        % This wrapper requests the data quantities needed for the next QP:
+        %   value         scalar h^2/2*||Q(physical(z))-data||^2 on measured rows;
+        %   gradient      real 3*P column vector, in T1/T2/density order;
+        %   local_hessian sparse 3*P-by-3*P local Gram approximation;
+        %   product       handle applying the exact sampled GN matrix, or [].
+        % These outputs contain data terms only. The caller adds the spatial
+        % and patch derivatives, and adds damping separately for each trial.
         % Rebuild derivatives only at the initial or accepted maps. Backtracking
         % reuses this linearization and calls data_model directly for trial values.
+        % In exact mode the fifth output captures the Bloch sensitivities at z.
+        % The ignored second output is a structure of objective components.
         product=[];
         if use_exact
             [value,~,gradient,local_hessian,product]=data_model(z);
@@ -302,17 +356,35 @@ function [u,D,C,info] = nested_dictionary_reconstruction(data,RF,TR,r,zeta,u0,op
 
     %% Helper: exact Hessian action requested by quadprog (no dense data matrix)
     function products=exact_hessian(~,directions)
+        % quadprog can request several Hessian-vector products at once;
+        % each column of directions is one 3*P-dimensional map increment.
+        % The ignored first argument is the supplied H matrix, whose role
+        % here is preconditioning. The actual curvature is applied below:
+        %   H_exact*V = h^2*real(J_data'*J_data*V) + penalty*V.
+        % data_product holds the linearization at theta_k throughout retries;
+        % penalty=regularizer_H+lambda_trial*G_step changes with each trial.
+        % Thus this callback needs no new Bloch simulation. Only the direction
+        % columns are made full for FFT operations; no dense Hessian is formed.
         directions=full(directions); % FFT products reshape each column into three maps.
         products=data_product(directions)+penalty*directions;
     end
 
     %% Helper: quantities constant while the map backtracking loop runs
     function [patches,sparsity]=patch_targets(dict,coeff)
-        % These depend only on the supplied D/C and stay fixed during map backtracking.
-        % Return them explicitly so each refresh is visible in the outer loop.
+        % Input dict contains three patch_area-by-patch_area dictionaries;
+        % coeff contains three patch_area-by-number_of_patches code matrices.
+        % Output patches has the same size as coeff, with one reconstructed
+        % patch per column: patches(:,:,j)=dict(:,:,j)*coeff(:,:,j).
+        % sparsity is the scalar sum_j Lambda(j)*Beta(j)*||coeff(:,:,j)||_1,
+        % where the L1 norm sums absolute values of ALL coefficient entries.
+        % Both outputs stay fixed while only the maps change. The caller
+        % stores them in targets/sparsity_value before evaluating patch_model.
+        % Initial history uses D_k/C_k; map backtracking uses D_kp1/C_kp1.
         patches=zeros(size(coeff));
         sparsity=0;
         for channel=1:3
+            % A zero patch weight removes both the fit and sparsity terms
+            % for this channel, so its initialized zero target is sufficient.
             if settings.Lambda(channel)==0, continue; end
             patches(:,:,channel)=dict(:,:,channel)*coeff(:,:,channel);
             coefficients=coeff(:,:,channel);
@@ -322,15 +394,27 @@ function [u,D,C,info] = nested_dictionary_reconstruction(data,RF,TR,r,zeta,u0,op
 
     %% Helper: patch-fit energy and its derivative with the current targets fixed
     function [fit,gradient]=patch_model(z)
+        % For scaled maps z and the shared targets, compute the smooth term
+        %   fit = sum_j Lambda(j)/2 * ||patches(z_j)-targets_j||_F^2.
+        % Neither coefficient sparsity nor spatial regularization is included;
+        % those terms are added separately when forming the full objective.
+        % With two outputs, also return its real 3*P map gradient. With one
+        % output, skip the gradient allocation and adjoint multiplication.
+        % nargout is the number of outputs requested from this helper call.
         fit=0;
         % Rejected map candidates need only energy; avoid their gradient work.
         if nargout>=2, gradient=zeros(P,3); end
         for channel=1:3
             if settings.Lambda(channel)==0, continue; end
+            % Each column is one vectorized patch. Vectorizing the resulting
+            % residual keeps the ordering used by the extraction matrix R.
             Xpatch=create_data_matrix_fast(z(:,:,channel),settings.PatchSize,R);
             residual=Xpatch-targets(:,:,channel);
             % A pixel may occur in many patches; R' adds every corresponding
             % residual contribution when differentiating the patch-fit energy.
+            % In vector form this is Lambda(j)*R'*(R*z_j(:)-targets_j(:)).
+            % Dividing by overlap counts would change this derivative: each
+            % occurrence contributes separately to the objective's patch sum.
             fit=fit+.5*settings.Lambda(channel)*sum(residual(:).^2);
             if nargout>=2
                 gradient(:,channel)=settings.Lambda(channel)*(R'*residual(:)); % Adjoint sum, not overlap average.
@@ -341,6 +425,14 @@ function [u,D,C,info] = nested_dictionary_reconstruction(data,RF,TR,r,zeta,u0,op
 
     %% Helper: record objective terms and optional diagnostics
     function record_state()
+        % Read the current accepted maps and write one row into shared info.
+        % Before calling, the outer code must ensure that fdata belongs to
+        % theta_k and targets/sparsity_value belong to its accepted D_k/C_k.
+        % This helper evaluates the spatial and patch terms, then combines
+        % all four objective contributions; it does not perform an update.
+        % completed=0 stores the initial state in row 1. After an acceptance,
+        % row completed+1 stores the new state and step row completed describes
+        % the transition into it. Rejected trials never call record_state.
         history_index=completed+1; % Index 1 is the initial state; later indices follow accepted steps.
         fit=patch_model(theta_k);
         spatial=.5*settings.Alpha*(theta_k(:)'*(K_grad*theta_k(:)));
@@ -349,10 +441,15 @@ function [u,D,C,info] = nested_dictionary_reconstruction(data,RF,TR,r,zeta,u0,op
         info.spatial(history_index)=spatial;
         info.patch(history_index)=fit;
         info.sparsity(history_index)=sparsity_value;
+        % Background RMS is a diagnostic in physical units, computed for
+        % pixels outside BodyMask. It does not mask variables in the solver.
         if ~isempty(settings.BodyMask) && any(~settings.BodyMask(:))
             maps=reshape(theta_k,P,3).*settings.Scales+[settings.ReferenceTimes 0];
             info.background_rms(history_index,:)=sqrt(mean(maps(~settings.BodyMask(:),:).^2,1));
         end
+        % A user-supplied monitor receives physical maps and returns a fixed
+        % number of metrics. Its first result determines the history width;
+        % these values are recorded but never used by the acceptance test.
         if ~isempty(settings.MonitorFcn)
             metrics=settings.MonitorFcn(offset+theta_k.*scale); % Evaluation only; never enters the objective.
             if history_index==1, info.monitor=zeros(settings.MaxIterations+1,numel(metrics)); end
@@ -364,6 +461,11 @@ end
 
 %% Settings and input checks (not part of the alternating algorithm)
 function settings=read_options(options,data,RF,TR,r,zeta,u0)
+    % This is a separate local function, so it receives everything it needs
+    % through arguments rather than sharing the reconstruction workspace.
+    % Start from defaults and replace only fields supplied by the caller.
+    % Reject unknown names to expose misspelled options instead of silently
+    % running with an unintended default. Return the merged, normalized struct.
     defaults=struct('Alpha',1,'Lambda',[45 45 45],'Beta',[.0045 .0045 .0045], ...
         'PatchSize',[8 8],'Scales',[5000 500 100],'ReferenceTimes',[1000 100], ...
         'H',1,'StepNorm','H1','GaussNewton','approximate', ...
@@ -380,6 +482,8 @@ function settings=read_options(options,data,RF,TR,r,zeta,u0)
     % penalize changes inside the dictionary-learning subproblems.
     % MapTolerance/DictionaryTolerance govern the OUTER change test;
     % InnerToleranceScale/InnerDecay govern the INNER dictionary accuracy.
+    % QP tolerances apply to each bounded map subproblem. The iteration limits
+    % cap three different loops: outer updates, inner D/C pairs and QP retries.
     names=fieldnames(options);
     for j=1:numel(names)
         assert(isfield(defaults,names{j}),'Unknown option: %s.',names{j});
@@ -393,16 +497,23 @@ function settings=read_options(options,data,RF,TR,r,zeta,u0)
     settings.InnerStopRule=validatestring(settings.InnerStopRule,{'tolerance','fixed','one-step'});
     [n,m,channels]=size(u0); L=size(data,3);
     % Check grid dimensions, sampling and physical bounds before simulation.
+    % One RF pulse, repetition time and sampling offset are needed per frame.
+    % Requiring r to divide n matches the regular Cartesian row-sampling grid.
     assert(channels==3 && size(data,1)==n && size(data,2)==m, ...
         'Use N-by-M-by-3 physical maps and N-by-M-by-L data.');
     assert(numel(RF)==L && numel(TR)==L && numel(zeta)==L && all(TR(:)>0), ...
         'Supply RF, positive TR and sampling offsets for every frame.');
     assert(r>=1 && r==fix(r) && mod(n,r)==0 && ...
         all(zeta(:)>=1 & zeta(:)<=r & zeta(:)==fix(zeta(:))), 'Invalid row sampling.');
+    % Use row vectors consistently: counts*Lambda is an outer product, and
+    % physical/scaled coordinate conversion expects one entry per map.
     for name={'Scales','LowerBounds','UpperBounds','Lambda','Beta'}
         settings.(name{1})=reshape(settings.(name{1}),1,3);
     end
     settings.ReferenceTimes=reshape(settings.ReferenceTimes,1,2);
+    % Positive scales preserve bound ordering under the coordinate change.
+    % Strictly positive relaxation-time bounds keep all feasible Bloch
+    % evaluations in their physical domain; density may be zero.
     assert(all(settings.UpperBounds>settings.LowerBounds), ...
         'Each LowerBounds entry must be strictly below its UpperBounds entry.');
     assert(all(settings.Scales>0) && ...
@@ -420,8 +531,12 @@ end
 
 %% Allocate output histories once; these arrays do not drive the updates
 function [info,state_fields,step_fields]=initialize_history(max_iterations)
-    % The extra row in state histories stores the starting point. The three
-    % columns of inner histories correspond to T1, T2 and density dictionaries.
+    % This separate local function allocates enough rows for the iteration
+    % cap. Preallocation avoids repeatedly growing arrays during reconstruction.
+    % The returned field-name lists tell the caller which histories to trim:
+    %   state_fields: max_iterations+1 rows, including the initial objective;
+    %   step_fields:  max_iterations rows, one per accepted outer transition.
+    % The three columns of inner histories correspond to T1, T2 and density.
     state_fields={'objective','data','spatial','patch','sparsity','time'};
     step_fields={'step_norm','dictionary_step_norm','damping','backtracking', ...
         'qp_firstorderopt','inner_tolerance'};
@@ -429,8 +544,13 @@ function [info,state_fields,step_fields]=initialize_history(max_iterations)
     for name=step_fields, info.(name{1})=zeros(max_iterations,1); end
     info.inner_iterations=zeros(max_iterations,3);
     info.inner_step_norm=zeros(max_iterations,3);
+    % NaN marks unavailable background diagnostics. Monitor width is unknown
+    % until its first evaluation, so it initially has zero columns.
     info.background_rms=NaN(max_iterations+1,3);
     info.monitor=zeros(max_iterations+1,0); % No additional histories unless requested.
+    % Exhausting the outer loop leaves this default stop reason in place;
+    % an earlier stopping condition replaces it. The last-QP fields remain
+    % NaN until a QP is attempted, and can retain a rejected trial's diagnostics.
     info.stop_reason='max_iterations'; info.last_qp_exitflag=NaN;
     info.last_qp_firstorderopt=NaN;
 end
