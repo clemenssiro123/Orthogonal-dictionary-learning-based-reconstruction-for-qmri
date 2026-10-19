@@ -12,7 +12,7 @@ function [R, number_of_patches, overlap_count] = create_R_matrix(image_size, pat
 %
 %   R has (P1*P2*M)-by-(N1*N2) entries and one nonzero (1) per row.
 %   Optional D is the N1*N2-by-1 vector of pixel overlap counts, satisfying
-%   R'*R = spdiags(D,0,N1*N2,N1*N2). Compute/cache it once per geometry.
+%   R'*R = spdiags(D,0,N1*N2,N1*N2). Reuse R and D while geometry is fixed.
 %   R' sums patch values back into the image; divide by D to average them.
 %   For stride > 1 some pixels may be uncovered (D=0), so do not divide
 %   those entries by zero. Stride 1 guarantees coverage for valid sizes.
@@ -20,7 +20,6 @@ function [R, number_of_patches, overlap_count] = create_R_matrix(image_size, pat
 %   Existing two-output calls remain supported. MATLAB R2021b compatible.
 
     %% 1. Check the image size, patch size and stride
-    % validateattributes rejects malformed inputs before any indexing is attempted.
     validateattributes(image_size, {'numeric'}, ...
         {'real','finite','vector','numel',2,'integer','positive'}, mfilename, 'image_size');
     validateattributes(patch_size, {'numeric'}, ...

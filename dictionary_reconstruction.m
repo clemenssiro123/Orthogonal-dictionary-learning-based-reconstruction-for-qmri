@@ -7,7 +7,8 @@ function [D, C, info] = dictionary_reconstruction(X, beta, options)
 %   X is a real, full, double K-by-M matrix: one image patch per column.
 %   D is K-by-K and C is K-by-M. The input patches stay fixed during the
 %   solve. No image normalization, mean removal, or patch extraction is
-%   performed here. For qMRI, pass X = P(u/scale) in the intended units.
+%   performed here. For qMRI, extract patches of the scaled deviations
+%   x=(u-[ReferenceTimes,0])./Scales, as in nested_dictionary_reconstruction.
 %   Reconstructed patches are D*C; average their overlaps to obtain an image.
 %
 %   This is the proximal alternating method in Appendix A of
@@ -150,7 +151,6 @@ end
 
 %% Settings and input checks (not part of alternating minimization)
 function options = read_options(X,beta,options)
-    % validateattributes rejects inputs with incompatible size, type or values.
     validateattributes(X, {'double'}, {'real','finite','2d','nonempty','nonsparse'}, ...
         mfilename, 'X');
     validateattributes(beta, {'double'}, {'real','finite','scalar','nonnegative'}, ...

@@ -1,185 +1,86 @@
-function [bloch,diff_t1,diff_t2] = Blochmap_vectorized(RFpulses, TR ,T1, T2, df)
+function [bloch,diff_t1,diff_t2] = Blochmap_vectorized(RFpulses,TR,T1,T2,df)
+%BLOCHMAP_VECTORIZED IR-bSSFP signal and relaxation-time derivatives.
+%   T1/T2 are equally sized maps; RFpulses/TR have one entry per frame.
+%   RF magnitudes are flip angles in radians and RF phases set the rotation
+%   axis. TR, T1 and T2 must use the same time unit (ms in this project).
+%   Outputs have size [size(T1),numel(TR)] and assume unit proton density.
 %
-% This function calculates the MRF signal evolution for an IR-bSSFP-based readout
-% for a single material (T1, T2, df) for the input RF pulse train and TR.
-% and also calculate the derivatives of the Bloch mapping.
+%   Magnetization starts at [0;0;-1] after a perfect inversion pulse.
+%   Each frame applies RF rotation, half-TR relaxation, signal sampling at
+%   TE=TR/2, and the remaining half-TR relaxation. Requesting derivatives
+%   propagates dM/dT1 and dM/dT2 through these same operations.
+%   DF is retained for call compatibility; off-resonance is not modeled.
+%   Legacy convention: nonpositive relaxation times have zero decay factors
+%   and zero decay-factor derivatives. Reconstruction solvers require T1/T2>0.
 %
-% This code is based on the single isochromat method popularized by Klaus
-% Scheffler. This works for bSSFP as long as one can assume that both the
-% flip angle and off-resonance frequency are essentially homogeneous inside
-% a voxel.
-%
-% INPUTS:
-% RFpulses Complex RF pulse train
-% (1 x #timepoints)
-%
-% TR TR (1 x #timepoints)
-%
-% theta=[T1, T2], df T1, T2, and off-resonance frequency
-% m1 the previous magnetization vector.
-%
-% Make sure these are all in the same
-% time units!
-%
-% OUTPUTS:
-%
-% the single of the discrete Bloch map and its derivatives with respect to
-% theta = [T1,T2].
-%
-%
-% This code use part of the code by Dan Ma, Mark Griswold to implement
-% the Bloch response.
-% copy right: Guozhi Dong, Kostas Papafitsoros, Michael Hintermueller.
-% April 2018 
-%
-% Vectorization by Clemens Sirotenko, February 2022
-%
-% Signal sampling is at TE = TR/2; the second half-TR relaxation follows.
-% Off-resonance evolution is currently disabled, so df is ignored.
+%   Based on the single-isochromat method of Klaus Scheffler and Bloch
+%   response code by Dan Ma and Mark Griswold.
+%   Copyright: Guozhi Dong, Kostas Papafitsoros, Michael Hintermueller, April 2018.
+%   Vectorization: Clemens Sirotenko, February 2022.
 
-if nargin<5
-    df = 0;
-end
+    if nargin<4, T2=50; end
+    if nargin<3, T1=1000; end
+    if nargin<2, TR=rand(1,1000)*4+10; end
+    if nargin<1, RFpulses=10*pi/180*randn(1,1000); end
 
-if nargin<4
-    T2 = 50;
-end
+    [n,m]=size(T1);
+    T1=T1(:).'; T2=T2(:).';
+    positive_t1=T1>0; positive_t2=T2>0;
+    frames=numel(TR); pixels=numel(T1);
+    flip=abs(RFpulses); phase=angle(RFpulses);
+    signal=complex(zeros(pixels,frames));
+    magnetization=repmat([0;0;-1],1,pixels);
 
-if nargin<3
-    T1 = 1000;
-end
+    with_derivatives=nargout>=2;
+    if with_derivatives
+        signal_t1=complex(zeros(pixels,frames));
+        signal_t2=complex(zeros(pixels,frames));
+        derivative_t1=zeros(3,pixels);
+        derivative_t2=zeros(3,pixels);
+    end
 
-if nargin<2
-    TR = rand(1,1000)*4+10;
-end
+    for t=1:frames
+        % RF rotation: phase shift, rotation about x, then undo phase shift.
+        rx=[1 0 0; 0 cos(flip(t)) sin(flip(t)); 0 -sin(flip(t)) cos(flip(t))];
+        rz=[cos(phase(t)) sin(phase(t)) 0; -sin(phase(t)) cos(phase(t)) 0; 0 0 1];
+        rotation=rz*rx*rz';
 
-if nargin<1
-    RFpulses = 10*pi./180*randn(1,1000);
-end
+        a1=zeros(1,pixels); a2=zeros(1,pixels);
+        a1(positive_t1)=exp(-TR(t)./(2*T1(positive_t1)));
+        a2(positive_t2)=exp(-TR(t)./(2*T2(positive_t2)));
+        decay=[a2;a2;a1];
+        rotated=rotation*magnetization;
 
-[n1,n2] = size(T1);
+        if with_derivatives
+            % d(exp(-TR/(2*T)))/dT = exp(-TR/(2*T))*TR/(2*T^2).
+            b1=zeros(1,pixels); b2=zeros(1,pixels);
+            b1(positive_t1)=TR(t)./(2*T1(positive_t1).^2);
+            b2(positive_t2)=TR(t)./(2*T2(positive_t2).^2);
+            decay_t1=[zeros(2,pixels);a1.*b1];
+            decay_t2=[a2.*b2;a2.*b2;zeros(1,pixels)];
+            % The -decay_t1 term differentiates longitudinal recovery (1-a1).
+            derivative_t1=decay_t1.*rotated+decay.*(rotation*derivative_t1)-decay_t1;
+            derivative_t2=decay_t2.*rotated+decay.*(rotation*derivative_t2);
+        end
 
-T1_vec = T1(:);
-T2_vec = T2(:);
+        % First half-TR relaxation, then sample the transverse signal.
+        magnetization=decay.*rotated;
+        magnetization(3,:)=magnetization(3,:)+(1-a1);
+        signal(:,t)=magnetization(1,:)+1i*magnetization(2,:);
+        if with_derivatives
+            signal_t1(:,t)=derivative_t1(1,:)+1i*derivative_t1(2,:);
+            signal_t2(:,t)=derivative_t2(1,:)+1i*derivative_t2(2,:);
+            % Differentiate the remaining half-TR before updating the state.
+            derivative_t1=decay_t1.*magnetization+decay.*derivative_t1-decay_t1;
+            derivative_t2=decay_t2.*magnetization+decay.*derivative_t2;
+        end
+        magnetization=decay.*magnetization;
+        magnetization(3,:)=magnetization(3,:)+(1-a1);
+    end
 
-indizes1 = T1_vec>0;
-indizes2 = T2_vec>0;
-
-
-
-
-N = length(TR);
-D = length(T1_vec);  % We assume that T2 and df are the same size
-
-A1_vec = zeros(D,1);
-A2_vec = zeros(D,1);
-
-A1_vec(indizes1) = 1./(T1_vec(indizes1));
-A2_vec(indizes2) = 1./(T2_vec(indizes2));
-
-rf = abs(RFpulses);
-rph = angle(RFpulses);
-
-dict = complex(zeros(D,N));
-dict_DT1 = complex(zeros(D,N));
-dict_DT2 = complex(zeros(D,N));
-
-
-% Create and initialize the states matrix based on whether we invert or not
-
-M1 = repmat([0 0 -1].',1,D);
-
-dif_m_1 = repmat([0 0 0].',1,D);
-dif_m_2 = repmat([0 0 0].',1,D);
-
-%m1=[0 0 -1].';  % This assumes a perfect inversion pulse with no delay
-
-
-for i=1:N
-  
-    % Define the linear dynamic operators for pulse i
-    
-    rx =    [   1.0 0.0 0.0;        % rotation matrix for pulse
-                0.0 cos(rf(i)) sin(rf(i));
-                0.0 -sin(rf(i)) cos(rf(i))];
-            
-    rdzp =  [   cos(rph(i)) sin(rph(i)) 0.0; % RF phase
-                -sin(rph(i)) cos(rph(i)) 0.0;
-                0.0 0.0 1.0];
-    
-    rdzm =  [   cos(-rph(i)) sin(-rph(i)) 0.0;
-                -sin(-rph(i)) cos(-rph(i)) 0.0;
-                0.0 0.0 1.0];
-                 
-    
-    % relaxation terms
-
-    %introduce these matrices to avoid division by zero and resulting nan's
-    %most likely this is not the most clever way
-    a1 = zeros(1,D);
-    a2 = zeros(1,D);
-    b1 = zeros(1,D);
-    b2 = zeros(1,D);
-    a1(indizes1) = exp(-TR(i)./(2*T1_vec(indizes1))');
-    a2(indizes2) = exp(-TR(i)./(2*T2_vec(indizes2))');
-    b2(indizes2) = TR(i)./(2*T2_vec(indizes2).^2)';
-    b1(indizes1) = TR(i)./(2*T1_vec(indizes1).^2)';
-
-
-    E12 = [a2; a2; a1];  %write the relaxation terms as a long matrix 
-    
-
-     
-    A1 = [zeros(1,D);  zeros(1,D)  ; a1];
-    B1 = [zeros(1,D);  zeros(1,D); b1];
-
-    A2 = [a2;  a2; zeros(1,D)];
-    B2 = [b2;  b2; zeros(1,D)];
-    %diff T1
-    
-    
-    dif_m_1 = (A1.*B1).*(rdzp*rx*rdzm*M1) + E12.*(rdzp*rx*rdzm*dif_m_1) - B1.*A1;
-    dif_m_2 = (A2.*B2).*(rdzp*rx*rdzm*M1) + E12.*(rdzp*rx*rdzm*dif_m_2);
-    
-
-    M1 = rdzp*rx*rdzm*M1;   % do RF pulse for all states
-
-    % relax 1st 1/2 of TR
-    M1 = E12.*M1;
-    M1(3,:) = M1(3,:) + (1 - a1);
-   
-    %beta = df.'.*TR(i)*2*pi; % beta is now a Dx1 vector associated with df
-
-% Off-resonance for first 1/2 of TR
-%     M1(1:2,:) = M1(1:2,:).*repmat([cos(beta./2); cos(beta/2)], 1, size(M1, 2)) + ...
-%         M1(2:-1:1,:).*repmat([sin(beta./2); - sin(beta./2)], 1, size(M1, 2));
-    
-    
-    %Sample assuming TE=TR/2     
-
-    dict(:,i) = M1(1,:) + (1i).*M1(2,:);   
-    dict_DT1(:,i) = dif_m_1(1,:) + (1i).*dif_m_1(2,:);
-    dict_DT2(:,i) = dif_m_2(1,:) + (1i).*dif_m_2(2,:);
-    
-    %dict_DT1(indizes1,i) = dif_m_1(1,indizes1) + (1i).*dif_m_1(2,indizes1);
-    %dict_DT2(indizes2,i) = dif_m_2(1,indizes2) + (1j).*dif_m_2(2,indizes2);
-
-    % relaxation for the second half after TE
-
-    dif_m_1 = (A1.*B1).*M1 + E12.*dif_m_1 - B1.*A1;
-    dif_m_2 = (A2.*B2).*M1 + E12.*dif_m_2;
-
-    M1 = E12.*M1;
-    M1(3,:) = M1(3,:) + (1 - a1);
-
-    % Off-resonance for 2nd 1/2 of TR (can be commented out if df = 0)
-%     M1(1:2,:) = M1(1:2,:).*repmat([cos(beta./2);cos(beta/2)], 1, size(M1, 2)) + ...
-%        M1(2:-1:1,:).*repmat([sin(beta./2);-sin(beta./2)], 1, size(M1, 2));
-    
-
-end 
-bloch = reshape(dict,n1,n2,N);
-diff_t1 = reshape(dict_DT1,n1,n2,N);
-diff_t2 = reshape(dict_DT2,n1,n2,N);
-
+    bloch=reshape(signal,n,m,frames);
+    if with_derivatives
+        diff_t1=reshape(signal_t1,n,m,frames);
+        diff_t2=reshape(signal_t2,n,m,frames);
+    end
 end

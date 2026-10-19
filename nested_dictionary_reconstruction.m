@@ -103,19 +103,13 @@ function [u,D,C,info] = nested_dictionary_reconstruction(data,RF,TR,r,zeta,u0,op
     % Keep this scale fixed even when the norms of later D/C iterates change.
 
     %% 5. Prepare data derivatives, the bounded QP solver and output histories
-    % This function evaluates the sampled Fourier/Bloch data-fit term at maps z.
     data_model=@(z) qmri_data_objective(z,data,RF,TR,r,zeta,settings.Scales,settings.H,settings.ReferenceTimes);
-    data_product=[]; penalty=[]; % Shared by the exact QP Hessian callback.
-    fdata=[]; gdata=[]; Happrox=[]; % Values updated by the nested data-model function.
-    targets=zeros(size(C)); % Cache the reconstructed patches D*C.
-    sparsity_value=0;       % Cache sum_j Lambda(j)*Beta(j)*||C_j||_1.
-    update_patch_targets(D,C); % Cache D*C and the coefficient penalty for fixed dictionaries.
-    update_data_model(); % Data derivatives depend on x, not on D or C.
+    penalty=[]; % Prior/damping matrix used by the exact QP Hessian callback.
+    [targets,sparsity_value]=patch_targets(D,C);
+    [fdata,gdata,Happrox,data_product]=evaluate_data_model(x);
     qpopts=optimoptions('quadprog','Algorithm','trust-region-reflective','Display','off', ...
         'OptimalityTolerance',settings.QPOptimalityTolerance,'FunctionTolerance',settings.QPFunctionTolerance, ...
         'TolPCG',settings.QPPCGTolerance,'PrecondBandWidth',inf,'MaxIterations',settings.QPMaxIterations); 
-    % The supplied sparse Hessian also preconditions exact FFT products.
-
     % Exact mode uses FFT products for the data Hessian; the sparse matrix preconditions it.
     if use_exact, qpopts.HessianMultiplyFcn=@exact_hessian; end
 
@@ -163,7 +157,7 @@ function [u,D,C,info] = nested_dictionary_reconstruction(data,RF,TR,r,zeta,u0,op
         dictionary_change=hypot(norm(Dnext(:)-D(:)),norm(Cnext(:)-C(:)));
 
         % B. Hold candidate D/C fixed and form the quadratic model for x.
-        update_patch_targets(Dnext,Cnext);
+        [targets,sparsity_value]=patch_targets(Dnext,Cnext);
         [patch_value,patch_gradient]=patch_model(x); % Patch-fit energy and derivative.
         % Compare map candidates against the objective with the SAME new D/C.
         base_value=fdata+.5*settings.Alpha*(x(:)'*(K*x(:)))+patch_value+sparsity_value;
@@ -186,8 +180,8 @@ function [u,D,C,info] = nested_dictionary_reconstruction(data,RF,TR,r,zeta,u0,op
                     penalty=regularizer_H+damping*G; % Used by the exact Hessian callback only.
                 end
                 H=base_H+damping*G; % In exact mode, H supplies only the preconditioner.
-                % Minimize g'*d + 0.5*d'*H*d subject to the increment bounds.
-                % Empty arguments mean there are no additional linear constraints.
+                % Minimize the quadratic model subject to the increment bounds.
+                % Exact mode gets curvature from exact_hessian; H preconditions it.
                 [free_step,~,qp_exitflag,qp_output]=quadprog(H(free,free),g(free),[],[],[],[], ...
                     step_lower,step_upper,qp_start,qpopts);
                 qp_opt=qp_output.firstorderopt;
@@ -240,7 +234,7 @@ function [u,D,C,info] = nested_dictionary_reconstruction(data,RF,TR,r,zeta,u0,op
         info.inner_tolerance(completed)=eta;
         info.inner_iterations(completed,:)=inner_steps;
         info.inner_step_norm(completed,:)=inner_changes; % LAST inner changes, per map.
-        update_data_model(); % Refresh derivatives at the accepted maps for the next QP.
+        [fdata,gdata,Happrox,data_product]=evaluate_data_model(x);
         record_state();      % Evaluation/history only; it does not change x, D or C.
         if settings.Verbose
             fprintf('%3d  J=%.6g  data=%.6g  step=%.2g  DC=%.2g  inner=[%d %d %d]  damping=%.2g\n', ...
@@ -269,16 +263,16 @@ function [u,D,C,info] = nested_dictionary_reconstruction(data,RF,TR,r,zeta,u0,op
     info.elapsed_seconds=toc(timer);
 
     %% Helper: data-fit value, gradient and Gauss-Newton curvature at current x
-    function update_data_model()
-        % Four outputs build the local approximation. Five also cache exact
-        % sampled GN products; the local approximation then preconditions them.
+    function [value,gradient,local_hessian,product]=evaluate_data_model(z)
+        % Rebuild derivatives only at the initial or accepted maps. Backtracking
+        % reuses this linearization and calls data_model directly for trial values.
+        product=[];
         if use_exact
-            [fdata,~,gdata,Happrox,data_product]=data_model(x);
+            [value,~,gradient,local_hessian,product]=data_model(z);
         else
-            [fdata,~,gdata,Happrox]=data_model(x);
+            [value,~,gradient,local_hessian]=data_model(z);
         end
-        % Stop before using invalid Bloch values or derivatives in another QP.
-        assert(isfinite(fdata) && all(isfinite(gdata)),'Nonfinite data model or gradient.');
+        assert(isfinite(value) && all(isfinite(gradient)),'Nonfinite data model or gradient.');
     end
 
     %% Helper: exact Hessian action requested by quadprog (no dense data matrix)
@@ -292,15 +286,16 @@ function [u,D,C,info] = nested_dictionary_reconstruction(data,RF,TR,r,zeta,u0,op
     end
 
     %% Helper: quantities constant while the map backtracking loop runs
-    function update_patch_targets(dict,coeff)
-        % targets has one synthesized patch per column. Its values are held
-        % constant during a map solve, so D*C need not be recomputed on retries.
-        sparsity_value=0;
+    function [patches,sparsity]=patch_targets(dict,coeff)
+        % These depend only on D/C and remain fixed throughout map backtracking.
+        % Return them explicitly so each refresh is visible in the outer loop.
+        patches=zeros(size(coeff));
+        sparsity=0;
         for channel=1:3
             if settings.Lambda(channel)==0, continue; end
-            targets(:,:,channel)=dict(:,:,channel)*coeff(:,:,channel);
+            patches(:,:,channel)=dict(:,:,channel)*coeff(:,:,channel);
             coefficients=coeff(:,:,channel);
-            sparsity_value=sparsity_value+settings.Lambda(channel)*settings.Beta(channel)*sum(abs(coefficients(:)));
+            sparsity=sparsity+settings.Lambda(channel)*settings.Beta(channel)*sum(abs(coefficients(:)));
         end
     end
 
@@ -348,7 +343,6 @@ end
 
 %% Settings and input checks (not part of the alternating algorithm)
 function settings=read_options(options,data,RF,TR,r,zeta,u0)
-    % assert(condition,message) stops with that message when condition is false.
     defaults=struct('Alpha',1,'Lambda',[45 45 45],'Beta',[.0045 .0045 .0045], ...
         'PatchSize',[8 8],'Scales',[5000 500 100],'ReferenceTimes',[1000 100], ...
         'H',1,'StepNorm','H1','GaussNewton','approximate', ...
@@ -377,8 +371,7 @@ function settings=read_options(options,data,RF,TR,r,zeta,u0)
     settings.StepNorm=validatestring(settings.StepNorm,{'H01','H1'});
     settings.InnerStopRule=validatestring(settings.InnerStopRule,{'tolerance','fixed','one-step'});
     [n,m,channels]=size(u0); L=size(data,3);
-    % assert stops with its message if a condition fails; these checks keep
-    % invalid dimensions, sampling patterns or physical bounds out of the solvers.
+    % Check grid dimensions, sampling and physical bounds before simulation.
     assert(channels==3 && size(data,1)==n && size(data,2)==m, ...
         'Use N-by-M-by-3 physical maps and N-by-M-by-L data.');
     assert(numel(RF)==L && numel(TR)==L && numel(zeta)==L && all(TR(:)>0), ...

@@ -1,13 +1,13 @@
 function parameters=reconstruction_parameters_128()
 % RECONSTRUCTION_PARAMETERS_128 Saved qMRI comparison parameters.
 % Usage: parameters=reconstruction_parameters_128();
-% 128-by-128 baseline: settings from demo_compare_all_reconstructions.
-% Edit this file to change the saved 128-by-128 settings.
+% Editable settings from demo_compare_all_reconstructions.
+% Originally a 128-by-128 baseline; pixel_stride below determines the actual size.
 % The two preset files are independent; neither loads the other.
 % Sizes assume a 256-by-256 source. Input choice and plots stay in the demos.
 
 % DOWNSAMPLING a 256-by-256 input: 1 -> 256-by-256, 2 -> 128-by-128, 4 -> 64-by-64.
-pixel_stride=4;             % Keep every pixel_stride-th row/column; no interpolation.
+pixel_stride=8;             % Keep every pixel_stride-th row/column; no interpolation.
 % Optional map rescaling is selected in the demo's input-loading section.
 % Bounds are physical [T1(ms), T2(ms), Density], chosen for your input maps.
 % Keep time lower bounds positive and density lower bound zero.
@@ -21,7 +21,7 @@ scales=[5000 500 100];       % Numerical scales in the SAME units; not intensity
 
 %% Shared experiment and coarse-grid BLIP initialization
 % L selects evenly spaced pulses across the full stored RF sequence (1 to 205).
-L=50; r=16; TR_ms=12;       % r must divide the reduced row count; r=1 works for any size.
+L=100; r=2; TR_ms=12;       % r must divide the reduced row count; r=1 works for any size.
 noise_std=1.5; seed=1;       % Standard deviation of EACH real/imaginary component.
 h=1;
 initial_use_body_mask=true; % Legacy initialization: zero density outside body.
@@ -67,8 +67,8 @@ lm_options=struct('MaxIterations',15,'GaussNewton','approximate', ...
 % proximal D/C updates. MapTolerance AND DictionaryTolerance must be met
 % to stop for a small outer change. QP tolerances control each map subproblem.
 one_options=struct( ...
-    'MaxIterations',100,'Alpha',0.7, 'Lambda',[10.75 37.5 37.5]*1.5,'Beta',[.009 .009 .009]*1.5,...
-    'PatchSize',[8 8],'StepNorm','H01','GaussNewton','approximate', ...
+    'MaxIterations',300,'Alpha',0.7, 'Lambda',[10.75 37.5 37.5]*1.5,'Beta',[.009 .009 .009]*1.5,...
+    'PatchSize',[4 4],'StepNorm','H01','GaussNewton','exact', ...
     'InnerStopRule','one-step','LambdaD',1,'LambdaC',1, ...
     'MapTolerance',1e-6,'DictionaryTolerance',1e-4, ...
     'InitialDamping',1,'MinDamping',1e-9,'MaxBacktracking',20, ...

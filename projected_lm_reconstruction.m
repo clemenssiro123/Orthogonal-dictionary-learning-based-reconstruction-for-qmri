@@ -69,7 +69,7 @@ function [u, info] = projected_lm_reconstruction(data, RF, TR, r, zeta, u0, opti
         % Compute the data objective, scaled gradient, local Gram matrix and exact GN product.
         [f,~,g,Happrox,data_product] = model(x);
     else
-        [f,~,g,Happrox] = model(x); % Avoid building the exact-product cache in approximate mode.
+        [f,~,g,Happrox] = model(x); % Approximate mode needs only the local Gram matrix.
     end
     % Stop immediately if the initial objective or gradient is invalid.
     assert(isfinite(f) && all(isfinite(g)),'Initial model or derivatives are nonfinite.');
@@ -173,7 +173,7 @@ function [u, info] = projected_lm_reconstruction(data, RF, TR, r, zeta, u0, opti
             % Evaluate the candidate and prepare its next exact GN product.
             [next_f,~,next_g,next_H,next_product] = model(trial_x);
         else
-            % Evaluate the candidate without building the exact-product cache.
+            % Evaluate the candidate's value, gradient and local Gram matrix.
             [next_f,~,next_g,next_H] = model(trial_x);
         end
         % Do not replace the current iterate by one with invalid objective or derivatives.
@@ -184,7 +184,7 @@ function [u, info] = projected_lm_reconstruction(data, RF, TR, r, zeta, u0, opti
         % Scheduled projected LM: no objective-decrease acceptance condition.
         % Commit the projected update and its model values; f is allowed to increase.
         x = trial_x; f = next_f; g = next_g; Happrox = next_H;
-        % Move the exact Hessian-product cache to the new linearization point.
+        % Subsequent Hessian products must use derivatives at the accepted maps.
         if use_exact, data_product = next_product; end
         accepted = accepted+1; % Count this completed projected update.
         info.damping(accepted) = damping; % Record the damping used for this completed update.
@@ -274,7 +274,6 @@ end
 
 %% Settings and input checks (not part of the numerical iteration)
 function [settings,discrepancy_threshold] = read_options(options,data,RF,TR,r,zeta,u0)
-    % assert(condition,message) stops with that message when condition is false.
     % Default coordinate scales for T1, T2 and density; physical L2 damping accounts for them.
     defaults = struct('Scales',[5000 500 100], ...
         'ReferenceTimes',[1000 100],'H',1, ...
@@ -322,7 +321,7 @@ function [settings,discrepancy_threshold] = read_options(options,data,RF,TR,r,ze
     assert(isempty(settings.BodyMask) || isequal(size(settings.BodyMask),[n m]), ...
         'BodyMask must match the image size.');
 
-    % Use the pasted method's r^2 choice when no initial damping is specified.
+    % Default from Dong et al. (2019), sec. 4.4; their sampling factor s is r.
     if isempty(settings.InitialDamping), settings.InitialDamping = r^2; end
     % Require a positive damped system and a nonincreasing geometric schedule.
     assert(settings.H>0 && settings.InitialDamping>0 && settings.MinDamping>0 && ...

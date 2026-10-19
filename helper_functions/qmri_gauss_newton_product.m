@@ -1,7 +1,8 @@
 function products = qmri_gauss_newton_product(directions, sensitivities, sampling_mask, h)
 %QMRI_GAUSS_NEWTON_PRODUCT Exact sampled Fourier data GN, without a matrix.
-%   The qMRI objective helpers supply the cached scaled Bloch
-%   sensitivities Q={d(rho*B)/dx1,d(rho*B)/dx2,d(rho*B)/dx3}, each N-by-M-by-L.
+%   The qMRI objective helpers supply the scaled Bloch
+%   sensitivities Q={d(rho*B)/dx1,d(rho*B)/dx2,d(rho*B)/dx3}, each N-by-M-by-L,
+%   evaluated at the current linearization point.
 %   DIRECTIONS is real, (3*N*M)-by-number_of_directions, in map-major order.
 %   SAMPLING_MASK is logical N-by-1-by-L, broadcast across image columns.
 %   Returns h^2*real(J'*J*DIRECTIONS), where J = S*unitaryFFT*Q.

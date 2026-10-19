@@ -17,6 +17,5 @@ function data_matrix = create_data_matrix_fast(data, patch_size, R_mat)
     end
     %% 2. Extract all patches and place one vectorized patch in each column
     % data(:) stacks image columns; R_mat copies entries in patch order.
-    % [] asks MATLAB to infer the number of output columns from the entry count.
     data_matrix = reshape(R_mat*data(:), patch_area, []);
 end
