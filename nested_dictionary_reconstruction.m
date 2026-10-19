@@ -27,6 +27,7 @@ function [u,D,C,info] = nested_dictionary_reconstruction(data,RF,TR,r,zeta,u0,op
 %   The outer stop requires BOTH small map and small total D/C changes.
 %   A failed inner solve or map update returns the last COMPLETE iterate.
 %   BodyMask/MonitorFcn are diagnostics only; all pixels remain variables.
+%   Each LowerBounds entry must be strictly below its UpperBounds entry.
 %   MATLAB R2021b + Optimization Toolbox. See demo_compare_all_reconstructions.
 %
 %   Array sizes: data is N-by-M-by-L; u/u0 are N-by-M-by-3 physical maps.
@@ -51,7 +52,7 @@ function [u,D,C,info] = nested_dictionary_reconstruction(data,RF,TR,r,zeta,u0,op
     % This changes data curvature only. Dictionary updates and the nonlinear
     % objective/gradient use the same formulas in both GN modes.
     [n,m,~]=size(u0);
-    P=n*m; % Pixels per parameter map; the map QP has at most 3*P unknowns.
+    P=n*m; % Pixels per parameter map; the map QP has 3*P unknowns.
     RF=RF(:).'; TR=TR(:).'; zeta=zeta(:).'; % .' preserves complex RF phases.
 
     %% 2. Scale physical maps and translate the physical bounds
@@ -65,8 +66,6 @@ function [u,D,C,info] = nested_dictionary_reconstruction(data,RF,TR,r,zeta,u0,op
     lower=lower(:); upper=upper(:); % Map-major ordering, identical to x(:).
     % Stop here if the starting maps are nonfinite or physically infeasible.
     assert(all(isfinite(x(:)) & x(:)>=lower & x(:)<=upper),'Initial maps must satisfy bounds.');
-    free=lower<upper; % Equal-bound variables have zero increments, not zero physical values.
-    number_of_free=nnz(free); % Fixed-bound variables never enter quadprog.
 
     %% 3. Build patch extraction, spatial regularization and the damping metric
     % R*x(:) stacks valid patches. counts tells how many patches cover each pixel.
@@ -165,39 +164,34 @@ function [u,D,C,info] = nested_dictionary_reconstruction(data,RF,TR,r,zeta,u0,op
         % this objective but has no derivative with respect to the map variables.
         g=gdata+settings.Alpha*(K*x(:))+patch_gradient; % Data + spatial + patch gradient.
         base_H=Happrox+regularizer_H; % Approximate data curvature + exact prior curvature.
-        step_lower=lower(free)-x(free); % Bounds constrain x+d, hence subtract x.
-        step_upper=upper(free)-x(free);
-        qp_start=zeros(number_of_free,1); % The zero increment is feasible.
+        step_lower=lower-x(:); % Bounds constrain x+d, hence subtract x.
+        step_upper=upper-x(:);
+        qp_start=zeros(3*P,1); % The zero increment is feasible.
         success=false;
-        qp_opt=NaN; % Remains NaN when all variables are fixed and no QP is needed.
         for trial=1:settings.MaxBacktracking
             % Keep x, its Bloch derivatives and candidate D/C fixed during
             % retries; only damping and the feasible QP starting step can change.
-            step=zeros(3*P,1); % Fixed components always have zero increment.
-            if number_of_free>0
-                total_trials=total_trials+1;
-                if use_exact
-                    penalty=regularizer_H+damping*G; % Used by the exact Hessian callback only.
-                end
-                H=base_H+damping*G; % In exact mode, H supplies only the preconditioner.
-                % Minimize the quadratic model subject to the increment bounds.
-                % Exact mode gets curvature from exact_hessian; H preconditions it.
-                [free_step,~,qp_exitflag,qp_output]=quadprog(H(free,free),g(free),[],[],[],[], ...
-                    step_lower,step_upper,qp_start,qpopts);
-                qp_opt=qp_output.firstorderopt;
-                info.last_qp_exitflag=qp_exitflag;
-                info.last_qp_firstorderopt=qp_opt;
-                valid=numel(free_step)==number_of_free && all(isfinite(free_step));
-                if valid
-                    qp_start=min(step_upper,max(step_lower,free_step)); % Warm-start retries.
-                end
-                % A positive exit flag alone may mean stagnation; optionally require optimality.
-                qp_accurate=~settings.QPRequireOptimality || qp_opt<=settings.QPOptimalityTolerance;
-                if ~(valid && qp_exitflag>0 && qp_accurate)
-                    damping=damping*4;
-                    continue; % Retry the QP before evaluating the nonlinear objective.
-                end
-                step(free)=free_step; % Embed free increments; fixed components remain zero.
+            total_trials=total_trials+1;
+            if use_exact
+                penalty=regularizer_H+damping*G; % Used by the exact Hessian callback only.
+            end
+            H=base_H+damping*G; % In exact mode, H supplies only the preconditioner.
+            % Minimize the quadratic model over all map increments.
+            % Exact mode gets curvature from exact_hessian; H preconditions it.
+            [step,~,qp_exitflag,qp_output]=quadprog(H,g,[],[],[],[], ...
+                step_lower,step_upper,qp_start,qpopts);
+            qp_opt=qp_output.firstorderopt;
+            info.last_qp_exitflag=qp_exitflag;
+            info.last_qp_firstorderopt=qp_opt;
+            valid=numel(step)==3*P && all(isfinite(step));
+            if valid
+                qp_start=min(step_upper,max(step_lower,step)); % Warm-start retries.
+            end
+            % A positive exit flag alone may mean stagnation; optionally require optimality.
+            qp_accurate=~settings.QPRequireOptimality || qp_opt<=settings.QPOptimalityTolerance;
+            if ~(valid && qp_exitflag>0 && qp_accurate)
+                damping=damping*4;
+                continue; % Retry the QP before evaluating the nonlinear objective.
             end
             candidate=min(upper,max(lower,x(:)+step)); % Remove bound roundoff.
             step=candidate-x(:);
@@ -277,12 +271,8 @@ function [u,D,C,info] = nested_dictionary_reconstruction(data,RF,TR,r,zeta,u0,op
 
     %% Helper: exact Hessian action requested by quadprog (no dense data matrix)
     function products=exact_hessian(~,directions)
-        % quadprog supplies free-variable columns. Embed them before the FFT
-        % calculation, add prior/damping curvature, then restrict back to free entries.
-        full_directions=zeros(3*P,size(directions,2));
-        full_directions(free,:)=full(directions); % Embed free increments with zeros in fixed entries.
-        products=data_product(full_directions)+penalty*full_directions;
-        products=products(free,:); % Restrict the resulting product back to the QP unknowns.
+        directions=full(directions); % FFT products reshape each column into three maps.
+        products=data_product(directions)+penalty*directions;
     end
 
     %% Helper: quantities constant while the map backtracking loop runs
@@ -382,7 +372,9 @@ function settings=read_options(options,data,RF,TR,r,zeta,u0)
         settings.(name{1})=reshape(settings.(name{1}),1,3);
     end
     settings.ReferenceTimes=reshape(settings.ReferenceTimes,1,2);
-    assert(all(settings.Scales>0) && all(settings.UpperBounds>=settings.LowerBounds) && ...
+    assert(all(settings.UpperBounds>settings.LowerBounds), ...
+        'Each LowerBounds entry must be strictly below its UpperBounds entry.');
+    assert(all(settings.Scales>0) && ...
         all(settings.LowerBounds(1:2)>0) && settings.LowerBounds(3)>=0, 'Invalid scales or physical bounds.');
     assert(settings.Alpha>=0 && all(settings.Lambda>=0) && all(settings.Beta>=0) && settings.H>0, ...
         'Regularization weights must be nonnegative and H positive.');
