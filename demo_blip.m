@@ -37,7 +37,7 @@ upper_bounds = [5500 550];
 dictionary_spacing = [100 10]; % [T1 T2] spacing in ms; smaller spacing costs more time/memory.
 
 %% 1. Settings: change these to try a different experiment
-L = 100;                % Number of RF pulses / measured time frames (1 to 100).
+L = 100;                % Pulses spanning the full stored RF sequence (1 to 205).
 r = 16;                % Must divide the reduced row count; r = 1 works for any size.
 noise_std = 4;          % Standard deviation of EACH real/imaginary noise part.
 % Uniform dictionary grids follow your bounds, including both endpoints.
@@ -97,7 +97,7 @@ assert(r >= 1 && r == floor(r) && mod(n1, r) == 0, ...
 
 sequence = load(fullfile(project_root, 'data', 'sequence_parameter_middle.mat'), 'RF');
 % RF contains flip angles/phases. Only RF is loaded; this demo supplies its own TR.
-RF = sequence.RF(1:2:2*L); % Select L pulses, taking every second stored pulse.
+RF = select_rf_pulses(sequence.RF,L); % L pulses spanning the full stored sequence.
 TR = repetition_time_ms * ones(1, L); % Shared by data and dictionary simulation.
 df = 0;                  % No off-resonance; the current simulator ignores df.
 

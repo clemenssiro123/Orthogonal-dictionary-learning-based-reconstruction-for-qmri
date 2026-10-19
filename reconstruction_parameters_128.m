@@ -7,7 +7,7 @@ function parameters=reconstruction_parameters_128()
 % Sizes assume a 256-by-256 source. Input choice and plots stay in the demos.
 
 % DOWNSAMPLING a 256-by-256 input: 1 -> 256-by-256, 2 -> 128-by-128, 4 -> 64-by-64.
-pixel_stride=2;             % Keep every pixel_stride-th row/column; no interpolation.
+pixel_stride=4;             % Keep every pixel_stride-th row/column; no interpolation.
 % Optional map rescaling is selected in the demo's input-loading section.
 % Bounds are physical [T1(ms), T2(ms), Density], chosen for your input maps.
 % Keep time lower bounds positive and density lower bound zero.
@@ -20,7 +20,8 @@ scales=[5000 500 100];       % Numerical scales in the SAME units; not intensity
 % Also review the BLIP grid spacing below for the new range.
 
 %% Shared experiment and coarse-grid BLIP initialization
-L=100; r=16; TR_ms=12;       % r must divide the reduced row count; r=1 works for any size.
+% L selects evenly spaced pulses across the full stored RF sequence (1 to 205).
+L=50; r=16; TR_ms=12;       % r must divide the reduced row count; r=1 works for any size.
 noise_std=1.5; seed=1;       % Standard deviation of EACH real/imaginary component.
 h=1;
 initial_use_body_mask=true; % Legacy initialization: zero density outside body.

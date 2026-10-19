@@ -261,7 +261,32 @@ For direct calls, the main solver entry points are [`blip_reconstruction.m`](bli
 
 The qMRI reconstruction demos use `data/sequence_parameter_middle.mat` for the RF pulse sequence. The four-method comparison currently generates artificial 256 x 256 reference maps and subsamples them according to the selected preset; its input section also offers `data/PWbrain256.mat`, which is the standalone demos' default. Measurements are simulated from the selected maps. The image-denoising demo loads only the selected image variable and adds noise directly to the image; it does not use the RF sequence.
 
-To use your own reference maps in a qMRI demo, select a MAT file containing equally sized, real, finite, two-dimensional arrays named `T1`, `T2`, and `Density` as described in the quick start. Relaxation times are in milliseconds; density must be nonnegative, with zero marking the background. The four-method, standalone LM and dictionary-regularized demos replace background T1/T2 values with `reference_times` before simulation. Foreground values must satisfy the selected bounds, and each patch must fit the reduced image. Review the physical bounds, scaling, and sampling settings for the new input. The four-method demo selects RF entries `1:2:2*L`, so the stored sequence must be long enough for those indices. For image denoising, supply just one real, finite, two-dimensional numeric array and set `image_variable` to its name; adjust `image_scale` and `noise_std` to its units.
+### Choosing the RF sequence length and TR
+
+Set `L` in the selected parameter preset (or the standalone demo's manual settings). Every qMRI demo calls [`select_rf_pulses`](helper_functions/select_rf_pulses.m) to select `L` pulses across the **entire** stored RF sequence, using `round(linspace(1,numel(sequence.RF),L))`. For example, `L=30` selects 30 entries spread from index 1 to index 205. Selection preserves the original pulse values and complex phases without interpolation or filtering. Both endpoints are included for `L>=2`; `L=1` selects the first pulse. `L` must be a positive integer no larger than the number of stored pulses (currently 205).
+
+```matlab
+addpath('helper_functions');
+sequence = load(fullfile('data','sequence_parameter_middle.mat'),'RF');
+L = 30;
+[RF,indices] = select_rf_pulses(sequence.RF,L);
+TR_ms = 12;
+TR = TR_ms*ones(1,L);
+plot(indices,abs(RF)*180/pi,'o-');
+xlabel('Stored pulse index'); ylabel('Flip angle (degrees)');
+```
+
+The source RF magnitudes represent flip angles in radians, currently ranging from 0 to about 64.34 degrees. `TR_ms` is independent of RF selection: the demos generate `L` identical repetition times, shared by data simulation and reconstruction. Both presets use 12 ms; the standalone BLIP demo's manual default is 10 ms. The MAT file also contains variable TR values (about 11.17 to 30.74 ms), but these are **not used**. Downsampling RF does not accumulate the omitted repetition times: at 12 ms, `L=30` gives a nominal pulse-train duration of 0.36 s, whereas `L=100` gives 1.2 s. All methods in the four-method comparison use the same selected acquisition.
+
+Earlier versions selected the prefix `1:2:2*L`. Full-sequence selection changes the acquisition even at `L=100`, so earlier numerical benchmarks should not be expected to reproduce exactly. New comparison files save the actual `RF`, `TR`, `zeta`, and `experiment.RFIndices`; older result files still support replotting but may lack these acquisition arrays.
+
+For context, [Ma et al.'s original MRF experiment](https://mriquestions.com/uploads/3/4/5/7/34572113/mr_fingerprinting_nature11971.pdf) used variable TR between 10.5 and 14 ms for one sequence. [Zhao et al.'s sequence-design study](https://arxiv.org/pdf/1710.08062), Section III-A.2, used ordinary excitation angles between 10 and 60 degrees and TR between 11 and 15 ms, with a separate allowance for an initial inversion pulse. This makes our approximately 0-64-degree angles and 12-ms TR plausible starting magnitudes for numerical experiments; it does not establish that our particular sequence is optimal. Constant TR is also an explicit simplifying choice in [Dong, Hintermueller and Papafitsoros](https://arxiv.org/pdf/1903.11979), Section 2.3.
+
+Uniform RF selection is a resampling rule, not sequence optimization. Changing `L` changes the excitation dynamics, duration and available information, so a short run such as `L=30` should not be assumed to retain the accuracy of `L=100`. Zhao et al. optimize acquisitions for different lengths separately. Check reconstruction errors for the intended `L`, noise and undersampling. Also review `r`: with `zeta=mod(0:L-1,r)+1`, `L<r` does not complete even one cycle through all sampled-row offsets. These numerical choices are not a validated scanner protocol.
+
+### Using your own reference maps
+
+To use your own reference maps in a qMRI demo, select a MAT file containing equally sized, real, finite, two-dimensional arrays named `T1`, `T2`, and `Density` as described in the quick start. Relaxation times are in milliseconds; density must be nonnegative, with zero marking the background. The four-method, standalone LM and dictionary-regularized demos replace background T1/T2 values with `reference_times` before simulation. Foreground values must satisfy the selected bounds, and each patch must fit the reduced image. Review the physical bounds, scaling, and sampling settings for the new input. For image denoising, supply just one real, finite, two-dimensional numeric array and set `image_variable` to its name; adjust `image_scale` and `noise_std` to its units.
 
 The demos leave reconstructed maps and available iteration histories in the MATLAB workspace. Only the four-method comparison automatically saves `results.mat`, including errors, residuals, timings, stopping reasons and experiment settings. Save workspace variables explicitly if numerical results from the other demos are needed later.
 
@@ -282,8 +307,9 @@ disp(nested_history.stop_reason);
 | `comparison`, `rmse` | Final errors, residuals, timings and stopping reasons; `rmse` has methods in rows and `[T1 T2 Density]` in columns. |
 | `saved_histories`, `saved_options` | Per-method histories and the options actually passed to each solver. State histories include iteration zero; completed-update histories start at update one. |
 | `initial_history`, `initial_options`, `experiment`, `design` | Coarse-BLIP diagnostics/settings, acquisition and coordinate settings, and plot design. |
+| `RF`, `TR`, `zeta` | Actual selected complex RF pulses (magnitudes in radians), repetition times in ms, and sampled-row offsets. `experiment.RFIndices`, `RFSourceLength`, and `RFSelection` record how the RF train was selected. Available in new runs. |
 
-The MAT file is saved **before PDF export**, so numerical results remain available if plotting fails. It does not contain the noisy measurement array, RF vector, or final DL dictionaries/coefficients; retain and save those explicitly if needed. Use `export_comparison_reports` to rebuild all reports, or the individual plotting functions above to draw selected figures. The compact-PDF example exports only its eight files.
+The MAT file is saved **before PDF export**, so numerical results remain available if plotting fails. It does not contain the noisy measurement array or final DL dictionaries/coefficients; retain and save those explicitly if needed. Use `export_comparison_reports` to rebuild all reports, or the individual plotting functions above to draw selected figures. The compact-PDF example exports only its eight files.
 
 ### Interpreting the results
 

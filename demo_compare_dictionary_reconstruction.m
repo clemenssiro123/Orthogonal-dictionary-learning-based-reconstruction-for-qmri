@@ -122,7 +122,8 @@ assert(mod(n,r)==0,'r must divide the reduced image row count; use r=1 for any s
 % Load only the RF pulses. TR is set separately and is shared by simulation
 % and reconstruction; zeta cycles the starting row of the sampling pattern.
 sequence=load(fullfile(root,'data','sequence_parameter_middle.mat'),'RF');
-RF=sequence.RF(1:2:2*L); TR=TR_ms*ones(1,L); zeta=mod(0:L-1,r)+1;
+RF=select_rf_pulses(sequence.RF,L); % L pulses spanning the full stored sequence.
+TR=TR_ms*ones(1,L); zeta=mod(0:L-1,r)+1;
 % Simulate a unit-density complex response for every pixel and time frame.
 B=Blochmap_vectorized(RF,TR,truth(:,:,1),truth(:,:,2),0);
 % Allocate full k-space storage; only measured rows receive signal and noise.

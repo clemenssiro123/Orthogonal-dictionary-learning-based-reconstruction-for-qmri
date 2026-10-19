@@ -131,8 +131,10 @@ for choice={initial_options,blip_options}
         'Both BLIP grids must lie inside the common physical bounds.');
 end
 sequence=load(fullfile(root,'data','sequence_parameter_middle.mat'),'RF');
-% Select L stored RF pulses, prescribe TR, and cycle the sampling offset 1:r.
-RF=sequence.RF(1:2:2*L); TR=TR_ms*ones(1,L); zeta=mod(0:L-1,r)+1;
+% Select L pulses across the full stored sequence; TR is prescribed separately.
+[RF,rf_indices]=select_rf_pulses(sequence.RF,L);
+TR=TR_ms*ones(1,L);
+zeta=mod(0:L-1,r)+1;
 B=Blochmap_vectorized(RF,TR,truth(:,:,1),truth(:,:,2),0);
 % B is n-by-m-by-L. Density multiplies the unit-density response before the FFT.
 data=complex(zeros(n,m,L)); noise_squared=0;
@@ -241,6 +243,7 @@ mkdir(output_folder);
 % Only now create the output directory, after the numerical solves have completed.
 % Save enough to inspect the settings/results later without rerunning the solvers.
 experiment=struct('InputFile',input_file,'PixelStride',pixel_stride,'Frames',L,'Undersampling',r,'TR_ms',TR_ms, ...
+    'RFSelection','uniform_full_sequence','RFIndices',rf_indices,'RFSourceLength',numel(sequence.RF), ...
     'NoiseStd',noise_std,'Seed',seed,'Scales',scales,'ReferenceTimes',reference_times, ...
     'LowerBounds',lower_bounds,'UpperBounds',upper_bounds,'H',h, ...
     'InitialUseBodyMask',initial_use_body_mask,'InitialSeconds',initial_seconds, ...
@@ -253,7 +256,7 @@ for method=1:4
 end
 save(fullfile(output_folder,'results.mat'),'truth','mask','u0','reconstructions', ...
     'saved_histories','saved_options','initial_options','initial_history','comparison', ...
-    'rmse','experiment','design','method_names');
+    'rmse','experiment','design','method_names','RF','TR','zeta');
 
 %% 7. Plot/export the saved results; each figure is also callable separately
 % Loading the saved structure exercises the same interface used for later replotting.
