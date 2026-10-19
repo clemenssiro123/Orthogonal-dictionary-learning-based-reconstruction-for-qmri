@@ -8,9 +8,10 @@
 /run_tests.m
 test_*.m
 
-# Local prox-linear comparison method and its dedicated objective helper.
-/prox_linear_reconstruction.m
-/demo_prox_linear_reconstruction.m
+# Keep all prox-linear method files, variants, and artifacts local.
+*prox_linear*
+*prox-linear*
+# Dedicated objective helper; shared dictionary-learning helpers remain tracked.
 /helper_functions/qmri_h1_objective.m
 
 # MATLAB editor backups and logs.

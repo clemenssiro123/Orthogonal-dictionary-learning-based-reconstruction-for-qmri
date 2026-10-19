@@ -4,7 +4,6 @@ function prox = prox_c(gamma,c,mode)
 % min_z 0.5*|z-c|^2 + gamma*penalty(z). The array shape is preserved.
 % 'soft' uses penalty(z)=|z|; the other branch uses penalty(z)=(z~=0).
 % This helper is used by dictionary learning to make small coefficients zero.
-% It is independent of the separate prox_linear_reconstruction algorithm.
 
 %% 1. Soft thresholding: shrink every magnitude by gamma, stopping at zero
 if strcmp(mode,'soft')
