@@ -28,8 +28,8 @@ save(input_file,'T1','T2','Density');
 
 %% 1-2. Load saved experiment and algorithm parameters
 % Choose ONE preset here. Edit its .m file to save changes for future runs.
-% The 256 preset currently copies the 128 settings, with pixel_stride=1.
-% It can be tuned independently without changing the 128 baseline.
+% The 256 preset stores the standard full-resolution comparison settings.
+% The two presets can be tuned independently.
 parameters=reconstruction_parameters_128(); % Default: 128-by-128 from a 256 input.
 % parameters=reconstruction_parameters_256(); % Uncomment to use full resolution.
 % Optional one-run overrides go HERE, before the assignments below, e.g.:
@@ -59,7 +59,7 @@ nested_options=parameters.nested_options;
 %% 3. Plot design: shared color limits make the maps visually comparable
 % These settings affect rendering, not reconstruction or numerical errors.
 % Each row of MapLimits/ErrorLimits belongs to T1, T2 or density in that order.
-design.MapColors={turbo(256),turbo(256),turbo(256)}; % Replace by gray(256), etc.
+design.MapColors={parula(256),parula(256),parula(256)}; % Replace by gray(256), etc.
 design.MapLimits=[zeros(3,1) upper_bounds(:)];     % Display ranges follow physical bounds.
 design.ErrorColors=hot(256);
 design.ErrorLimits=[zeros(3,1) .2*(upper_bounds-lower_bounds).']; % Display first 20% of each range.

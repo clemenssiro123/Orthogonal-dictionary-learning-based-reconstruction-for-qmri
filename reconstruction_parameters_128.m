@@ -21,7 +21,7 @@ scales=[5000 500 100];       % Numerical scales in the SAME units; not intensity
 
 %% Shared experiment and coarse-grid BLIP initialization
 L=100; r=16; TR_ms=12;       % r must divide the reduced row count; r=1 works for any size.
-noise_std=1.0; seed=1;       % Standard deviation of EACH real/imaginary component.
+noise_std=1.5; seed=1;       % Standard deviation of EACH real/imaginary component.
 h=1;
 initial_use_body_mask=true; % Legacy initialization: zero density outside body.
                            % The mask is NOT a constraint in any subsequent solve.

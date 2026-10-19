@@ -1,8 +1,8 @@
 function parameters=reconstruction_parameters_256()
 % RECONSTRUCTION_PARAMETERS_256 Saved qMRI comparison parameters.
 % Usage: parameters=reconstruction_parameters_256();
-% 256-by-256 starting point: copied from the 128-by-128 baseline.
-% TODO: tune this file independently for 256-by-256 experiments.
+% Standard 256-by-256 configuration from the supplied four-method comparison.
+% L=100, r=32, noise SD=1, seed=1; both DL methods use at most 80 outer steps.
 % The two preset files are independent; neither loads the other.
 % Sizes assume a 256-by-256 source. Input choice and plots stay in the demos.
 
@@ -20,7 +20,7 @@ scales=[5000 500 100];       % Numerical scales in the SAME units; not intensity
 % Also review the BLIP grid spacing below for the new range.
 
 %% Shared experiment and coarse-grid BLIP initialization
-L=100; r=16; TR_ms=12;       % r must divide the reduced row count; r=1 works for any size.
+L=100; r=32; TR_ms=12;       % r must divide the reduced row count; r=1 works for any size.
 noise_std=1.0; seed=1;       % Standard deviation of EACH real/imaginary component.
 h=1;
 initial_use_body_mask=true; % Legacy initialization: zero density outside body.
@@ -66,7 +66,8 @@ lm_options=struct('MaxIterations',15,'GaussNewton','approximate', ...
 % proximal D/C updates. MapTolerance AND DictionaryTolerance must be met
 % to stop for a small outer change. QP tolerances control each map subproblem.
 one_options=struct( ...
-    'MaxIterations',100,'Alpha',0.7, 'Lambda',[10.75 37.5 37.5]*1.5,'Beta',[.009 .009 .009]*1.5,...
+    'MaxIterations',80,'Alpha',0.7,'Lambda',[10.125 56.25 56.25], ...
+    'Beta',[.0126 .0126 .0126], ...
     'PatchSize',[8 8],'StepNorm','H01','GaussNewton','approximate', ...
     'InnerStopRule','one-step','LambdaD',1,'LambdaC',1, ...
     'MapTolerance',1e-6,'DictionaryTolerance',1e-4, ...

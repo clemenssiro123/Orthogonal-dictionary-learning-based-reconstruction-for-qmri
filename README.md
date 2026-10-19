@@ -61,7 +61,7 @@ For the supplied input, `pixel_stride = 1` uses the full 256 x 256 resolution; t
 Two editable MATLAB functions store the acquisition settings, physical bounds/scales, BLIP grids and initialization options, and the BLIP, LM, one-step DL and nested DL solver options:
 
 - [`reconstruction_parameters_128.m`](reconstruction_parameters_128.m): the current four-method comparison settings, saved as the 128 x 128 baseline.
-- [`reconstruction_parameters_256.m`](reconstruction_parameters_256.m): an independent copy with `pixel_stride = 1`. All other values currently match the baseline; this is a starting point for later tuning, not a tuned 256 x 256 configuration.
+- [`reconstruction_parameters_256.m`](reconstruction_parameters_256.m): the standard 256 x 256 configuration from the supplied four-method comparison, with `pixel_stride = 1`, `r = 32`, noise SD `1`, and 80 outer steps for both DL methods. It is independent of the 128 x 128 preset.
 
 Load either set as a MATLAB structure:
 
@@ -95,17 +95,18 @@ These assignments leave the preset file unchanged and apply on every run until r
 
 ### Current choices and their roles
 
-The 128 x 128 preset records the current experiment configuration. Its weights, iteration budgets and tolerances are practical choices for this setup; they are not claimed to be optimal for other inputs, noise levels or resolutions. The 256 x 256 preset is an editable starting copy and still needs its own evaluation.
+The 128 x 128 preset records the current baseline, while the 256 x 256 preset records the supplied standard configuration. Their weights, iteration budgets and tolerances are practical choices for these setups; they are not claimed to be optimal for other inputs, noise levels or resolutions. Values below apply to both presets unless a resolution is specified.
 
 | Setting in the preset | Current value | Purpose and effect of changing it |
 | --- | --- | --- |
-| `L`, `r`, `TR_ms`, `noise_std`, `seed` | `100`, `16`, `12`, `1`, `1` | Define the common simulated acquisition. Noise SD applies separately to real and imaginary parts. The seed fixes the random draw for a given setup. |
+| `L`, `r`, `TR_ms`, `noise_std`, `seed` | 128: `100`, `16`, `12`, `1.5`, `1`; 256: `100`, `32`, `12`, `1`, `1` | Define the common simulated acquisition. Noise SD applies separately to real and imaginary parts. The seed fixes the random draw for a given setup. |
 | `lower_bounds`, `upper_bounds`, `scales`, `reference_times` | `[100 10 0]`, `[5500 600 110]`, `[5000 500 100]`, `[1000 100]` | Define the admissible physical maps and shifted, scaled optimization coordinates. Time values are in ms. Changing scales also changes the DL prior in physical units, so review its weights. |
-| `coarse_spacing`, `initial_options` | `[200 50]` ms; at most 20 trials | Build a common coarse-BLIP start at lower dictionary cost. Rejected backtracking trials count toward this initialization budget. |
-| `fine_spacing`, `blip_options.MaxIterations` | `[100 10]` ms; 30 accepted updates | Refine the BLIP time grid and allow further reconstruction updates. Smaller spacing increases dictionary size and matching cost. The coarse grid is included in the fine dictionary. |
-| `lm_options` damping and budget | `InitialDamping=r^2`, `DampingDecay=0.15`, `MinDamping=1e-8`, `MaxIterations=15` | Control stabilization and the number of projected LM updates. A smaller decay reduces damping faster; more updates can improve the data fit but also fit more noise. |
-| DL `Alpha`, `Lambda`, `Beta`, `PatchSize` | `0.7`, `[10.75 37.5 37.5]*1.5`, `[.009 .009 .009]*1.5`, `[8 8]` | Weight spatial smoothness, patch fit and coefficient sparsity on the scaled maps. The coefficient penalty uses `Lambda.*Beta`; all three-component vectors follow `[T1 T2 Density]`. |
-| DL `MaxIterations`, `InnerStopRule` | 100 outer updates; `'one-step'` or `'tolerance'` | Set the outer budget and amount of dictionary learning between map updates. The baseline shares the prior weights across both DL methods. |
+| `coarse_spacing`, `initial_options`, `initial_use_body_mask` | `[200 50]` ms; 29 x 14 grid; at most 20 trials; mask enabled | Build a common coarse-BLIP start at lower dictionary cost. Rejected backtracking trials count toward this initialization budget. The mask zeros initial background density only. |
+| `fine_spacing`, `blip_options.MaxIterations` | `[100 10]` ms; 55 x 60 grid; at most 30 accepted updates | Refine the BLIP time grid and allow further reconstruction updates. Smaller spacing increases dictionary size and matching cost. The coarse grid is included in the fine dictionary. |
+| `lm_options` damping and budget | `InitialDamping=r^2` (256: `1024`), `DampingDecay=0.15`, `MinDamping=1e-8`, `MaxIterations=15` | Control stabilization and the number of projected LM updates. A smaller decay reduces damping faster; more updates can improve the data fit but also fit more noise. |
+| DL `Alpha`, `Lambda`, `Beta`, `PatchSize` | Both: `Alpha=0.7`, `[8 8]` patches; 128: `Lambda=[10.75 37.5 37.5]*1.5`, `Beta=[.009 .009 .009]*1.5`; 256: `Lambda=[10.125 56.25 56.25]`, `Beta=[.0126 .0126 .0126]` | Weight spatial smoothness, patch fit and coefficient sparsity on the scaled maps. The coefficient penalty uses `Lambda.*Beta`; all three-component vectors follow `[T1 T2 Density]`. |
+| DL `MaxIterations`, `InnerStopRule` | 128: 100 outer updates; 256: 80; `'one-step'` or `'tolerance'` | Set the outer budget and amount of dictionary learning between map updates. Each preset shares the prior weights across both DL methods. |
+| `h`, `GaussNewton`, DL `StepNorm` and QP tolerances | `1`; `'approximate'` for LM and DL; `'H01'`; optimality/function/PCG: `[1e-7 0 1e-6]` | Set grid spacing, curvature approximation, DL step norm and map-subproblem accuracy. |
 | `nested_options.InnerMaxIterations`, `InnerToleranceScale`, `InnerDecay` | `1000`, `0.005`, `0.75` | Cap inner dictionary updates and set their decreasing change tolerance. A smaller scale requests a tighter inner solve, potentially increasing cost or reaching the cap. |
 
 The LM choice `InitialDamping=r^2` follows the numerical choice in [Dong et al., Section 4.4](https://arxiv.org/pdf/1903.11979), where their undersampling factor `s` corresponds to this code's `r`. The decay `0.15` and 15-update budget are settings for this implementation, not values prescribed by that paper. LM has no spatial or dictionary penalty in this comparison.
@@ -120,14 +121,14 @@ The preset sizes assume a **256 x 256 source image**. Input-file selection, arti
 
 ## Expected runtime
 
-These are **provisional estimates for the entire `demo_compare_all_reconstructions` script**, including all four reconstruction methods, on the Dell XPS 17:
+The 128 x 128 estimate is provisional for the entire `demo_compare_all_reconstructions` script on the Dell XPS 17. The 256 x 256 timing comes from the supplied single-run comparison using the standard preset:
 
-| Reconstruction size | Setting for the supplied input | Estimated wall-clock time |
+| Reconstruction size | Setting for the supplied input | Runtime information |
 | --- | --- | --- |
 | **128 x 128 (recommended)** | `pixel_stride = 2` | Approximately **20 minutes** |
-| 256 x 256 | `pixel_stride = 1` | Approximately **2 hours** |
+| 256 x 256 | `pixel_stride = 1` | Approximately **5 hours 33 minutes** for all four solves plus one common initialization (19,963.10 s) |
 
-These values reflect the maintainer's recollection and estimates; they have **not been remeasured for the current version**. Actual runtime depends on hardware, acquisition length, patch size, iteration limits, solver tolerances, and plotting. They should be treated as planning estimates rather than benchmark results.
+The 128 x 128 estimate reflects the maintainer's recollection and has not been remeasured for the current version. The reported 256 x 256 solver times include monitoring/setup; simulation and report generation add to the full script runtime. All four methods in that run stopped at `max_iterations`, which does not certify convergence. Actual runtime depends on hardware, acquisition length, patch size, iteration limits, solver tolerances, and plotting.
 
 The saved comparison table reports `SolveSeconds` for each method and `TotalSeconds` for that method plus the shared initialization. These per-method values do not represent the full script's wall-clock time, which also includes simulation and report generation.
 
