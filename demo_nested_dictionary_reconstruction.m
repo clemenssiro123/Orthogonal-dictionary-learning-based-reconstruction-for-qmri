@@ -195,12 +195,14 @@ semilogy(k,max([info.objective info.data info.patch info.spatial info.sparsity],
 grid on; xlabel('Outer step'); title('Objective contributions');
 legend('Total','Data','Patch fit','Spatial','L1','Location','best');
 nexttile;
-semilogy(k,max(info.projected_gradient,eps),'LineWidth',design.LineWidth);
-grid on; xlabel('Outer step'); title('Map projected gradient (D,C fixed)');
+semilogy(1:info.iterations,max(info.step_norm,eps),'LineWidth',design.LineWidth);
+if options.MapTolerance>0, yline(options.MapTolerance,':k','Stopping tolerance'); end
+grid on; xlabel('Completed outer step'); ylabel('Absolute change');
+title(sprintf('Successive map change (%s norm)',options.StepNorm));
 nexttile;
-colororder(gca,lines(2));
-semilogy(1:info.iterations,max([info.step_norm info.dictionary_step_norm],eps),'LineWidth',design.LineWidth);
-grid on; xlabel('Outer step'); title('Absolute outer changes'); legend('Map','D,C');
+semilogy(1:info.iterations,max(info.dictionary_step_norm,eps),'LineWidth',design.LineWidth);
+if options.DictionaryTolerance>0, yline(options.DictionaryTolerance,':k','Stopping tolerance'); end
+grid on; xlabel('Completed outer step'); ylabel('Combined Frobenius norm'); title('Successive D,C change');
 nexttile;
 colororder(gca,lines(3));
 plot(1:info.iterations,info.inner_iterations,'LineWidth',design.LineWidth);

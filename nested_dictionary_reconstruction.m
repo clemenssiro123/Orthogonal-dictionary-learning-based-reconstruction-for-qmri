@@ -323,19 +323,16 @@ function [u,D,C,info] = nested_dictionary_reconstruction(data,RF,TR,r,zeta,u0,op
         if nargout>=2, gradient=gradient(:); end % Same T1/T2/density ordering as x(:).
     end
 
-    %% Helper: record objective terms, stationarity and optional diagnostics
+    %% Helper: record objective terms and optional diagnostics
     function record_state()
         k=completed+1; % Index 1 is the initial state; later indices follow accepted steps.
-        [fit,patch_gradient]=patch_model(x);
+        fit=patch_model(x);
         spatial=.5*settings.Alpha*(x(:)'*(K*x(:)));
-        gradient=gdata+settings.Alpha*(K*x(:))+patch_gradient;
-        pg=x(:)-min(upper,max(lower,x(:)-gradient)); % Map stationarity with D,C fixed.
         info.objective(k)=fdata+spatial+fit+sparsity_value;
         info.data(k)=fdata;
         info.spatial(k)=spatial;
         info.patch(k)=fit;
         info.sparsity(k)=sparsity_value;
-        info.projected_gradient(k)=norm(pg,inf); % This alone does not test D/C stationarity.
         if ~isempty(settings.BodyMask) && any(~settings.BodyMask(:))
             maps=reshape(x,P,3).*settings.Scales+[settings.ReferenceTimes 0];
             info.background_rms(k,:)=sqrt(mean(maps(~settings.BodyMask(:),:).^2,1));
@@ -409,7 +406,7 @@ end
 function [info,state_fields,step_fields]=initialize_history(max_iterations)
     % The extra row in state histories stores the starting point. The three
     % columns of inner histories correspond to T1, T2 and density dictionaries.
-    state_fields={'objective','data','spatial','patch','sparsity','projected_gradient','time'};
+    state_fields={'objective','data','spatial','patch','sparsity','time'};
     step_fields={'step_norm','dictionary_step_norm','damping','backtracking', ...
         'qp_firstorderopt','inner_tolerance'};
     for name=state_fields, info.(name{1})=zeros(max_iterations+1,1); end

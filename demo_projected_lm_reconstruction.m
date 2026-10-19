@@ -223,7 +223,7 @@ method_names={'LM'};
 export_reconstruction_report(truth,{reconstruction},reference_start,mask, ...
     method_names,design,output_folder);
 
-%% 6. Data residual, stationarity and background density
+%% 6. Data residual, successive-iterate change and background density
 % Include iteration zero. realmin avoids log(0) in plots without changing histories.
 fig=reconstruction_report_figure('Projected LM: convergence',design);
 tiledlayout(1,3,'TileSpacing','compact','Padding','compact');
@@ -232,8 +232,8 @@ if use_discrepancy && info.discrepancy_threshold>0
     hold on; yline(info.discrepancy_threshold,'k--','tau*delta');
 end
 grid on; xlabel('Update'); ylabel('Residual norm'); title('Measured data and noise threshold');
-nexttile; semilogy(0:info.iterations,max(info.projected_gradient,realmin),'LineWidth',design.LineWidth);
-grid on; xlabel('Update'); ylabel('Normalized coordinates'); title('Projected gradient norm');
+nexttile; semilogy(1:info.iterations,max(info.step_norm_absolute,realmin),'LineWidth',design.LineWidth);
+grid on; xlabel('Completed update'); ylabel('Absolute physical L2 norm'); title('Successive map change');
 nexttile; plot(0:info.iterations,info.background_rms(:,3),'LineWidth',design.LineWidth);
 grid on; xlabel('Update'); ylabel('RMS density'); title('Density leaking into background');
 export_reconstruction_pdf(fig,fullfile(output_folder,'convergence.pdf'),design);

@@ -337,29 +337,42 @@ end
 sgtitle('Reconstruction quality, including the common initial maps at step zero');
 export_pdf(fig,convergence_pdf,design,true);
 
-fig=new_figure('Dictionary convergence',design); tiledlayout(2,2,'TileSpacing','compact');
+fig=new_figure('Dictionary convergence',design); tiledlayout(3,2,'TileSpacing','compact');
 % Full objectives are comparable between the DL methods only for equal prior weights.
-% The map projected gradient treats D/C as fixed and does not certify joint optimality.
-for panel=1:4
-    nexttile; hold on;
+% Iterate-change histories start at one; dotted lines mark stopping tolerances.
+for panel=1:5
+    if panel==1, nexttile([1 2]); else, nexttile; end
+    hold on;
     for method=3:4
         state=histories{method}; horizontal=0:state.iterations;
         switch panel
             case 1, vertical=state.objective; label='Full regularized objective';
-            case 2, vertical=state.projected_gradient; label='Map projected gradient (D,C fixed)';
+            case 2
+                horizontal=1:state.iterations; vertical=state.step_norm;
+                label='Successive map change (solver norm)';
             case 3
+                horizontal=1:state.iterations; vertical=state.dictionary_step_norm;
+                label='Successive D,C change (combined Frobenius norm)';
+            case 4
                 horizontal=1:state.iterations; vertical=sum(state.inner_iterations,2);
                 label='D/C pairs per outer step (sum over maps)';
-            case 4
+            case 5
                 horizontal=1:state.iterations; vertical=state.qp_firstorderopt;
                 label='QP first-order optimality';
         end
         draw_curve(horizontal,max(vertical,eps),method,design);
+        if panel==2 || panel==3
+            tolerance=method_options{method}.MapTolerance;
+            if panel==3, tolerance=method_options{method}.DictionaryTolerance; end
+            if tolerance>0
+                yline(tolerance,':','Color',design.MethodColors(method,:),'HandleVisibility','off');
+            end
+        end
     end
     set(gca,'YScale','log'); grid on; xlabel('Completed step'); title(label);
     legend(method_names(3:4),'Location','best');
 end
-sgtitle('DL diagnostics: objective values are comparable only for equal regularization settings');
+sgtitle('DL diagnostics: absolute iterate changes; dotted lines mark stopping tolerances');
 export_pdf(fig,convergence_pdf,design,true);
 
 %% 9. Profiles and a compact numerical/settings summary

@@ -225,7 +225,7 @@ labels=design.MapNames;
 % time answer different questions. max(...,eps) only keeps log plots finite.
 colors=design.MethodColors;
 fig=reconstruction_report_figure('Dictionary comparison: convergence',design);
-tiledlayout(2,2,'TileSpacing','compact','Padding','compact');
+tiledlayout(3,2,'TileSpacing','compact','Padding','compact');
 nexttile; hold on;
 for method=1:2
     state=histories{method};
@@ -239,13 +239,25 @@ for method=1:2
     plot(state.time,max(state.objective,eps),'Color',colors(method,:),'LineStyle',design.LineStyles{method},'LineWidth',design.LineWidth);
 end
 set(gca,'YScale','log'); grid on; xlabel('Elapsed seconds'); title('Full objective versus time');
-nexttile; hold on;
-for method=1:2
-    state=histories{method};
-    plot(0:state.iterations,max(state.projected_gradient,eps),'Color',colors(method,:),'LineStyle',design.LineStyles{method},'LineWidth',design.LineWidth);
+for change_panel=1:2
+    nexttile; hold on;
+    for method=1:2
+        state=histories{method}; values=state.step_norm;
+        if change_panel==2, values=state.dictionary_step_norm; end
+        plot(1:state.iterations,max(values,eps),'Color',colors(method,:), ...
+            'LineStyle',design.LineStyles{method},'LineWidth',design.LineWidth);
+    end
+    tolerance=options.MapTolerance;
+    if change_panel==2, tolerance=options.DictionaryTolerance; end
+    if tolerance>0, yline(tolerance,':k','Stopping tolerance','HandleVisibility','off'); end
+    set(gca,'YScale','log'); grid on; xlabel('Completed outer step'); ylabel('Absolute change');
+    if change_panel==1
+        title(sprintf('Successive map change (%s norm)',options.StepNorm));
+    else
+        title('Successive D,C change (combined Frobenius norm)');
+    end
 end
-set(gca,'YScale','log'); grid on; xlabel('Outer step'); title('Map projected gradient (D,C fixed)');
-nexttile; hold on;
+nexttile([1 2]); hold on;
 for method=1:2
     state=histories{method};
     stairs(1:state.iterations,sum(state.inner_iterations,2),'Color',colors(method,:),'LineStyle',design.LineStyles{method},'LineWidth',design.LineWidth);
