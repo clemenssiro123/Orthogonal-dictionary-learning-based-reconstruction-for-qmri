@@ -37,7 +37,7 @@ upper_bounds = [5500 550];
 dictionary_spacing = [100 10]; % [T1 T2] spacing in ms; smaller spacing costs more time/memory.
 
 %% 1. Settings: change these to try a different experiment
-L = 100;                % Pulses spanning the full stored RF sequence (1 to 205).
+L = 100;                % Pulses spanning the full stored RF sequence (1 to 1000).
 r = 16;                % Must divide the reduced row count; r = 1 works for any size.
 noise_std = 4;          % Standard deviation of EACH real/imaginary noise part.
 % Uniform dictionary grids follow your bounds, including both endpoints.

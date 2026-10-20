@@ -263,12 +263,12 @@ The qMRI reconstruction demos use `data/sequence_parameter_middle.mat` for the R
 
 ### Choosing the RF sequence length and TR
 
-Set `L` in the selected parameter preset (or the standalone demo's manual settings). Every qMRI demo calls [`select_rf_pulses`](helper_functions/select_rf_pulses.m) to select `L` pulses across the **entire** stored RF sequence, using `round(linspace(1,numel(sequence.RF),L))`. For example, `L=30` selects 30 entries spread from index 1 to index 205. Selection preserves the original pulse values and complex phases without interpolation or filtering. Both endpoints are included for `L>=2`; `L=1` selects the first pulse. `L` must be a positive integer no larger than the number of stored pulses (currently 205).
+Set `L` in the selected parameter preset (or the standalone demo's manual settings). Every qMRI demo calls [`select_rf_pulses`](helper_functions/select_rf_pulses.m) to select `L` pulses across the **entire** stored RF sequence, using `round(linspace(1,numel(sequence.RF),L))`. For example, `L=30` selects 30 entries spread from index 1 to index 1000. Selection preserves the stored pulse values and complex phases without interpolation or filtering. Both endpoints are included for `L>=2`; `L=1` selects the first pulse. **Lengths from 1 to 1000 are supported**; the demo defaults remain `L=100`.
 
 ```matlab
 addpath('helper_functions');
 sequence = load(fullfile('data','sequence_parameter_middle.mat'),'RF');
-L = 30;
+L = 1000;
 [RF,indices] = select_rf_pulses(sequence.RF,L);
 TR_ms = 12;
 TR = TR_ms*ones(1,L);
@@ -276,7 +276,23 @@ plot(indices,abs(RF)*180/pi,'o-');
 xlabel('Stored pulse index'); ylabel('Flip angle (degrees)');
 ```
 
-The source RF magnitudes represent flip angles in radians, currently ranging from 0 to about 64.34 degrees. `TR_ms` is independent of RF selection: the demos generate `L` identical repetition times, shared by data simulation and reconstruction. Both presets use 12 ms; the standalone BLIP demo's manual default is 10 ms. The MAT file also contains variable TR values (about 11.17 to 30.74 ms), but these are **not used**. Downsampling RF does not accumulate the omitted repetition times: at 12 ms, `L=30` gives a nominal pulse-train duration of 0.36 s, whereas `L=100` gives 1.2 s. All methods in the four-method comparison use the same selected acquisition.
+The source RF magnitudes represent flip angles in radians, ranging from 0 to about 64.34 degrees. The 1000-frame file continues the original **120-frame motif** exactly: 50 active pulses, 10 zero-RF recovery frames, 50 active pulses at half amplitude, and 10 more recovery frames. The original zero RF phase is retained. Alternating high/low flip-angle blocks and recovery intervals are consistent with the general design in [Ma et al. (2013), Methods: Sequence Design](https://pmc.ncbi.nlm.nih.gov/articles/PMC3602925/); this continuation uses the project's existing values and is not a reproduction of that paper's protocol or an optimized acquisition.
+
+The first 205 RF and TR entries are unchanged. A byte-for-byte backup of the original file is kept as [`data/sequence_parameter_middle_205.mat`](data/sequence_parameter_middle_205.mat). **Shorter runs now select different pulses**, because selection spans all 1000 entries. To reproduce an old acquisition, load RF from the backup before calling `select_rf_pulses`.
+
+`TR_ms` is independent of RF selection: the demos generate `L` identical repetition times, shared by data simulation and reconstruction. Both presets use 12 ms; the standalone BLIP demo's manual default is 10 ms. The MAT file also contains 1000 variable TR values (about 11.17 to 30.74 ms), formed by independently repeating the original 205-entry TR vector, but these are **not used by the demos**. To use them in a custom simulation, select `TR=sequence.TR(indices)` using the same indices as RF. Downsampling RF does not accumulate the omitted repetition times: at 12 ms, `L=100` gives a nominal pulse-train duration of 1.2 s and `L=1000` gives 12 s. All methods in the four-method comparison use the same selected acquisition.
+
+The extension is reproducible with [`extend_rf_sequence`](helper_functions/extend_rf_sequence.m). The MAT file retains `RF`, `TR`, `L`, and `df`, and adds `RFDesign` metadata:
+
+```matlab
+addpath('helper_functions');
+original = load(fullfile('data','sequence_parameter_middle_205.mat'));
+extended = extend_rf_sequence(original,1000);
+% Save under a new name to inspect or customize it.
+save(fullfile('data','sequence_parameter_custom.mat'),'-struct','extended','-v7');
+```
+
+MATLAB R2021b validation covers all selectable lengths, finite Bloch signals and derivatives, finite-difference derivative agreement at 1000 frames, and local identification of `[T1,T2,density]` on 51 tissue pairs spanning T1=100--5500 ms and T2=10--600 ms with T2<=T1. At fixed TR=12 ms and unit density, the median predicted standard-deviation ratios for 1000 versus the original 205 frames were approximately `[0.506,0.779,0.927]`, using the full three-parameter sensitivity matrix and equal independent signal noise. These are local simulation diagnostics, not reconstruction-error guarantees; spatial undersampling and regularization are not included.
 
 Earlier versions selected the prefix `1:2:2*L`. Full-sequence selection changes the acquisition even at `L=100`, so earlier numerical benchmarks should not be expected to reproduce exactly. New comparison files save the actual `RF`, `TR`, `zeta`, and `experiment.RFIndices`; older result files still support replotting but may lack these acquisition arrays.
 

@@ -20,7 +20,7 @@ scales=[5000 500 100];       % Numerical scales in the SAME units; not intensity
 % Also review the BLIP grid spacing below for the new range.
 
 %% Shared experiment and coarse-grid BLIP initialization
-% L selects evenly spaced pulses across the full stored RF sequence (1 to 205).
+% L selects evenly spaced pulses across the full stored RF sequence (1 to 1000).
 L=100; r=32; TR_ms=12;       % r must divide the reduced row count; r=1 works for any size.
 noise_std=1.0; seed=1;       % Standard deviation of EACH real/imaginary component.
 h=1;
